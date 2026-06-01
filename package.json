@@ -1,0 +1,30 @@
+{
+  "name": "anim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Write markdown, get an animated slide deck. Code tweens, graphs draw themselves on, file trees slide.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node bin/build-frames.mjs --check",
+    "build:md": "node bin/build-frames.mjs",
+    "frames": "node bin/from-git.mjs",
+    "graphs": "bash bin/render-d2.sh",
+    "shoot": "node bin/shoot.mjs"
+  },
+  "dependencies": {
+    "marked": "^18.0.4",
+    "panzoom": "^9.4.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "shiki": "^1.24.0",
+    "shiki-magic-move": "^0.5.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.60.0",
+    "vite": "^5.4.11"
+  }
+}

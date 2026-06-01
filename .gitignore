@@ -1,0 +1,8 @@
+node_modules/
+dist/
+shots/
+# generated from the deck by bin/build-frames.mjs
+src/frames.json
+src/glossary.json
+graphs/*.d2
+public/*.svg
