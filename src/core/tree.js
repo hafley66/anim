@@ -80,20 +80,27 @@ export function flattenTree(root, { isOpen } = {}) {
 }
 
 // convert a TreeNode into a react-arborist forest: [{ id, children, ...payload }].
-// children:null marks a leaf (arborist infers isLeaf from that). `share` = this
-// node's count as a fraction of its parent's aggregate count (its weight among
-// siblings) -> the row's border-bottom bar. The renderer reads label/icon/ids/
-// count/share/title off each node.
-const conv = (n, parentTotal) => ({
-  id: n.key, label: n.label || n.seg, icon: n.icon, ids: n.ids, count: n.count,
-  share: parentTotal ? n.count / parentTotal : 1,
-  title: n.rows.map(r => r.locator).join('  ') || n.key,
-  children: n.children.size ? [...n.children.values()].map(c => conv(c, n.count)) : null,
-})
-export const toForest = root => {
-  const total = [...root.children.values()].reduce((s, c) => s + c.count, 0)
-  return [...root.children.values()].map(c => conv(c, total))
+// children:null marks a leaf. The bar is metric-agnostic: `weight(node)->number`
+// is pluggable (default = leaf count; later LOC, churn, coverage, cost...). Per
+// node we attach the RAW value plus, relative to its siblings, `share` (value /
+// sibling total) and `offset` (cumulative share of preceding siblings, so the
+// segments stack — each starts where the previous ended). A renderer picks how
+// to draw these (share bar, absolute bar, sparkline, ...).
+const convChildren = (nodes, weight) => {
+  const total = nodes.reduce((s, n) => s + weight(n), 0)
+  let acc = 0
+  return nodes.map(n => {
+    const share = total ? weight(n) / total : 1
+    const offset = acc; acc += share
+    return {
+      id: n.key, label: n.label || n.seg, icon: n.icon, ids: n.ids, count: n.count,
+      value: weight(n), share, offset,
+      title: n.rows.map(r => r.locator).join('  ') || n.key,
+      children: n.children.size ? convChildren([...n.children.values()], weight) : null,
+    }
+  })
 }
+export const toForest = (root, weight = n => n.count) => convChildren([...root.children.values()], weight)
 export const nodeCount = root => {
   let c = 0
   const walk = n => { for (const k of n.children.values()) { c++; walk(k) } }

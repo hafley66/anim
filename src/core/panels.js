@@ -48,9 +48,15 @@ const codePath = loc => {
 }
 const slashPath = loc => clean(String(loc).split('/'))
 
+// bar: optional row-decoration config. weight(node)->magnitude; mode 'share' =
+// relative to parent (cumulative segments); color overrides the fill. Opt-in per
+// panel, and globally toggle-able in the UI. Only fs ships one by default.
+/** @typedef {{ weight?: (n:any)=>number, mode?: 'share'|'absolute', color?: string }} BarConfig */
+const COUNT_BAR = { weight: n => n.count, mode: 'share' }
+
 export const DEFAULT_SPEC = { key: '*', title: 'refs', pathOf: slashPath, icon: '▸', leafIcon: '·' }
 export const PANEL_SPECS = [
-  { key: 'fs',   title: 'fs · files',      pathOf: fsPath,   icon: '▸', leafIcon: '·' },
+  { key: 'fs',   title: 'fs · files',      pathOf: fsPath,   icon: '▸', leafIcon: '·', bar: COUNT_BAR },
   { key: 'sql',  title: 'sql · rows',      pathOf: sqlPath,  icon: '▸', leafIcon: '•' },
   { key: 'api',  title: 'api · endpoints', pathOf: apiPath,  icon: '▸', leafIcon: '⇥' },
   { key: 'url',  title: 'url · sitemap',   pathOf: urlPath,  icon: '▸', leafIcon: '·' },

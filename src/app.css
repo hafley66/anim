@@ -312,18 +312,25 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 /* ---- file-explorer tree (react-arborist rows; it positions + indents) ---- */
 .atlas-tree { padding: 3px 0; }
 .atlas-empty { padding: 4px 10px; font-size: 11px; }
-/* arborist passes position/height/paddingLeft via inline style; .trow fills it */
-.trow { box-sizing: border-box; height: 100%; width: 100%; display: flex; align-items: center; gap: 6px;
-  cursor: pointer; padding-right: 8px; min-width: 0; position: relative; }
+/* arborist passes position/height via inline style on .trow; paddingLeft (indent)
+   is split onto .trow-in so the bar can span the FULL row width, un-indented. */
+.trow { box-sizing: border-box; height: 100%; width: 100%; display: flex; align-items: stretch;
+  cursor: pointer; min-width: 0; position: relative; }
+.trow-in { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; padding-right: 8px; }
 .trow:hover { background: var(--atlas-row-hover); }
 .trow.hot { background: var(--atlas-hot); }
-/* border-bottom WEIGHT BAR: filled fraction = this row's share of its parent's
-   aggregate count (folders agg). The rest of the bottom edge is a faint rule. */
-.trow::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; pointer-events: none;
-  background: linear-gradient(to right,
-    var(--atlas-link) 0, var(--atlas-link) calc(var(--share, 0) * 100%),
-    var(--atlas-panel-line) calc(var(--share, 0) * 100%), var(--atlas-panel-line) 100%); opacity: .55; }
-.trow:hover::after { opacity: .85; }
+/* WEIGHT BAR: full-width track, RIGHT edge is the fixed origin (gradient `to left`),
+   so indentation never shifts it. Filled segment = [offset, offset+share] => siblings
+   stack, each starting where the previous ended. Metric is pluggable (panels opt in). */
+.trow-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(to left,
+    var(--atlas-panel-line) 0,
+    var(--atlas-panel-line) calc(var(--offset, 0) * 100%),
+    var(--atlas-link) calc(var(--offset, 0) * 100%),
+    var(--atlas-link) calc((var(--offset, 0) + var(--share, 0)) * 100%),
+    var(--atlas-panel-line) calc((var(--offset, 0) + var(--share, 0)) * 100%),
+    var(--atlas-panel-line) 100%); }
+.trow:hover .trow-bar { height: 3px; }
 .trow .tw { width: 11px; flex: 0 0 11px; text-align: center; color: var(--atlas-muted); font-size: 9px; }
 .trow .ticon { width: 13px; flex: 0 0 13px; text-align: center; font-size: 10px; opacity: .8; }
 .trow .tlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
