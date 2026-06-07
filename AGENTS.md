@@ -81,8 +81,12 @@ net.route -> net.nexthop
 
 - `# @ id : text` annotates a node (shows in the detail panel).
 - `# src id = path:line` and `# ref <panel> id = locator` give a node a per-panel
-  **address** (`fs`/`sql`/`api`). As nodes come into the cone, their addresses
-  stream into that panel's list. `# src` is the fs shorthand.
+  **address**. As nodes come into the cone, their addresses stream into that panel.
+  `# src` is the fs shorthand. Built-in panels: `fs` (path), `sql` (`table:pred`,
+  `db.table.col`), `api` (`GET /v1/x/{id}`), `url` (a sitemap), `code` (`pkg.mod.sym`).
+  Any other `<panel>` key works too — it gets a default `/`-split panel. Each panel
+  renders its locators as a **collapsible file-tree** (folders, twisties, counts);
+  segmentation per kind lives in `src/core/panels.js`, the builder in `src/core/tree.js`.
 - `# tag id : hub,sink` styles a node by category (hub/sink/dead/ghost + fn/type/
   module/relation). `# diff add|del|mod id` tints add/del/mod. Cycles auto-color.
 - d2 **containers** (`net: L3 { ip; route }`) render as compound boxes you can lay out.

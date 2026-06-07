@@ -307,7 +307,26 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 .atlas-phead .pprefix { color: #94a3b8; text-transform: none; letter-spacing: 0; font-size: 10px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .atlas-phead .count { margin-left: auto; color: #94a3b8; }
-.atlas-panel.collapsed .atlas-rows, .atlas-panel.collapsed .atlas-detail { display: none; }
+.atlas-panel.collapsed .atlas-rows, .atlas-panel.collapsed .atlas-detail, .atlas-panel.collapsed .atlas-tree { display: none; }
+
+/* ---- file-explorer tree: branch rows + twisties + indent guides ---- */
+.atlas-tree { list-style: none; margin: 0; padding: 4px; max-height: 26vh; overflow: auto; --ind: 13px; }
+.trow { display: flex; align-items: center; gap: 5px; cursor: pointer; border-radius: 5px; position: relative;
+  min-width: 0; padding: 2px 6px 2px calc(6px + min(var(--d), 8) * var(--ind)); animation: atlasrowin .18s ease;
+  content-visibility: auto; contain-intrinsic-size: auto 20px; }
+/* one faint vertical rule per ancestor level, drawn with a repeating gradient (no per-level DOM) */
+.trow::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; pointer-events: none;
+  width: calc(min(var(--d), 8) * var(--ind));
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--ind) - 1px),
+    var(--atlas-panel-line) calc(var(--ind) - 1px), var(--atlas-panel-line) var(--ind)); }
+.trow:hover { background: var(--atlas-row-hover); }
+.trow.hot { background: var(--atlas-hot); }
+.trow .tw { width: 11px; flex: 0 0 11px; text-align: center; color: var(--atlas-muted); font-size: 9px; }
+.trow .ticon { width: 13px; flex: 0 0 13px; text-align: center; font-size: 10px; opacity: .8; }
+.trow .tlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+.trow.branch .tlabel { font-weight: 600; color: #334155; }
+.trow .tcount { color: var(--atlas-muted); font-size: 10px; flex: 0 0 auto; }
+.trow .rid { color: var(--atlas-link); opacity: .7; font-size: 10px; flex: 0 0 auto; }
 .atlas-rows { list-style: none; margin: 0; padding: 4px; max-height: 26vh; overflow: auto; }
 .atlas-rows li { padding: 2px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 6px;
   align-items: baseline; min-width: 0; animation: atlasrowin .24s ease;
