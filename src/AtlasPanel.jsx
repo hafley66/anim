@@ -32,36 +32,56 @@ const TAG_VOCAB = new Set(['hub', 'sink', 'dead', 'ghost', 'fn', 'type', 'module
 const SUP = { '-': '⁻', '+': '⁺', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' }
 const supN = n => [...((n > 0 ? '+' : '') + n)].map(c => SUP[c] || c).join('')
 
-const CY_STYLE = [
+// Read the --atlas-* theme tokens off :root so the canvas (cytoscape can't use
+// CSS var()) and the DOM panels share one palette. Re-skin in app.css, not here.
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement)
+  const v = (n, fb) => (cs.getPropertyValue(n).trim() || fb)
+  return {
+    nodeFill: v('--atlas-node-fill', '#a5b4fc'), nodeText: v('--atlas-node-text', '#1e293b'), nodeBorder: v('--atlas-node-border', '#4f46e5'),
+    coneFill: v('--atlas-cone-fill', '#4f46e5'), coneText: v('--atlas-cone-text', '#fff'), coneBorder: v('--atlas-cone-border', '#312e81'),
+    focalFill: v('--atlas-focal-fill', '#1e1b4b'), focalText: v('--atlas-focal-text', '#fff'), focalHalo: v('--atlas-focal-halo', '#c7d2fe'),
+    ctxFill: v('--atlas-ctx-fill', '#eef1f6'), ctxText: v('--atlas-ctx-text', '#64748b'), ctxBorder: v('--atlas-ctx-border', '#cbd5e1'),
+    ctxOpacity: parseFloat(v('--atlas-ctx-opacity', '0.7')),
+    edge: v('--atlas-edge', '#cbd5e1'), edgeOut: v('--atlas-edge-out', '#ea7c1f'), edgeIn: v('--atlas-edge-in', '#16a34a'),
+    hubFill: v('--atlas-hub-fill', '#fde68a'), hubBorder: v('--atlas-hub-border', '#f59e0b'),
+    hot: v('--atlas-hot', '#fde047'), hotBorder: v('--atlas-hot-border', '#ca8a04'),
+  }
+}
+
+function buildCyStyle(t) {
+  return [
   { selector: 'node', style: { 'label': 'data(lbl)', 'font-size': 11, 'font-family': 'ui-monospace,monospace',
-    'font-weight': 600, 'text-valign': 'center', 'color': '#1e293b', 'background-color': '#a5b4fc', 'background-opacity': 1,
-    'border-width': 1.6, 'border-color': '#4f46e5', 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
+    'font-weight': 600, 'text-valign': 'center', 'color': t.nodeText, 'background-color': t.nodeFill, 'background-opacity': 1,
+    'border-width': 1.6, 'border-color': t.nodeBorder, 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
   { selector: 'node[?grp]', style: {                                                          // d2 container
-    'background-opacity': 0.06, 'background-color': '#64748b', 'border-color': '#94a3b8',
+    'background-opacity': 0.06, 'background-color': t.ctxText, 'border-color': t.ctxBorder,
     'border-style': 'dashed', 'border-width': 1, 'shape': 'round-rectangle',
-    'text-valign': 'top', 'text-halign': 'center', 'font-size': 10, 'color': '#64748b', 'padding': 12 } },
+    'text-valign': 'top', 'text-halign': 'center', 'font-size': 10, 'color': t.ctxText, 'padding': 12 } },
   { selector: 'node[?ann]', style: { 'border-width': 2 } },                                  // has a # @ note
-  { selector: 'node.leaf', style: { 'background-color': '#f1f5f9', 'border-color': '#94a3b8' } },
-  { selector: 'node.hub',  style: { 'background-color': '#fde68a', 'border-color': '#f59e0b', 'width': 'label' } },
-  { selector: 'node.sink', style: { 'shape': 'round-hexagon', 'background-color': '#e2e8f0' } },
-  { selector: 'node.dead', style: { 'border-style': 'dashed', 'border-color': '#dc2626', 'background-color': '#fee2e2' } },
+  { selector: 'node.leaf', style: { 'background-color': '#f1f5f9', 'border-color': '#94a3b8', 'color': t.nodeText } },
+  { selector: 'node.hub',  style: { 'background-color': t.hubFill, 'border-color': t.hubBorder, 'color': '#1e293b', 'width': 'label' } },
+  { selector: 'node.sink', style: { 'shape': 'round-hexagon', 'background-color': '#e2e8f0', 'color': t.nodeText } },
+  { selector: 'node.dead', style: { 'border-style': 'dashed', 'border-color': '#dc2626', 'background-color': '#fee2e2', 'color': '#1e293b' } },
   { selector: 'node.ghost', style: { 'opacity': 0.45, 'border-style': 'dotted' } },
-  { selector: 'node.diff-add', style: { 'border-color': '#16a34a', 'background-color': '#dcfce7' } },
-  { selector: 'node.diff-del', style: { 'border-color': '#dc2626', 'background-color': '#fee2e2', 'border-style': 'dashed' } },
-  { selector: 'node.diff-mod', style: { 'border-color': '#d97706', 'background-color': '#fef3c7' } },
+  { selector: 'node.diff-add', style: { 'border-color': '#16a34a', 'background-color': '#dcfce7', 'color': '#1e293b' } },
+  { selector: 'node.diff-del', style: { 'border-color': '#dc2626', 'background-color': '#fee2e2', 'border-style': 'dashed', 'color': '#1e293b' } },
+  { selector: 'node.diff-mod', style: { 'border-color': '#d97706', 'background-color': '#fef3c7', 'color': '#1e293b' } },
   { selector: 'node.cyc', style: { 'border-color': '#dc2626', 'border-width': 2.5, 'border-style': 'double' } },
-  { selector: 'node.hl-cone', style: { 'background-color': '#6366f1', 'color': '#fff', 'border-color': '#4338ca', 'border-width': 2, 'opacity': 1 } },
-  { selector: 'node.hl-focal', style: { 'border-width': 4, 'border-color': '#c7d2fe', 'background-color': '#312e81', 'color': '#fff', 'opacity': 1, 'z-index': 99 } },
+  { selector: 'node.hl-cone', style: { 'background-color': t.coneFill, 'color': t.coneText, 'border-color': t.coneBorder, 'border-width': 2, 'opacity': 1 } },
+  { selector: 'node.hl-focal', style: { 'border-width': 4, 'border-color': t.focalHalo, 'background-color': t.focalFill, 'color': t.focalText, 'opacity': 1, 'z-index': 99 } },
   { selector: 'node.heaton', style: { 'background-color': 'mapData(heat, 0, 1, #dbeafe, #b91c1c)', 'color': 'mapData(heat, 0.5, 1, #1e293b, #fff)' } },
-  { selector: 'node.hot', style: { 'background-color': '#fef08a', 'border-color': '#eab308' } },     // cross-lit
-  { selector: 'node.faded', style: { 'opacity': 0.5, 'background-color': '#e5e7eb', 'border-color': '#cbd5e1', 'color': '#9aa3b2' } }, // desaturate to gray scaffold, not just dim
-  { selector: 'edge.faded', style: { 'opacity': 0.08, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1' } }, // edges recede further
+  { selector: 'node.hot', style: { 'background-color': t.hot, 'border-color': t.hotBorder, 'color': '#1e293b' } },     // cross-lit
+  // context: desaturate to a gray scaffold but keep the label READABLE (mid-slate text)
+  { selector: 'node.faded', style: { 'opacity': t.ctxOpacity, 'background-color': t.ctxFill, 'border-color': t.ctxBorder, 'color': t.ctxText } },
+  { selector: 'edge.faded', style: { 'opacity': 0.12, 'line-color': t.ctxBorder, 'target-arrow-color': t.ctxBorder } },
   { selector: '.iso-hide', style: { 'display': 'none' } },
-  { selector: 'edge', style: { 'width': 1.4, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
+  { selector: 'edge', style: { 'width': 1.4, 'line-color': t.edge, 'target-arrow-color': t.edge,
     'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
-  { selector: 'edge.hl-in',  style: { 'line-color': '#22c55e', 'target-arrow-color': '#22c55e', 'width': 2, 'opacity': 0.9 } },
-  { selector: 'edge.hl-out', style: { 'line-color': '#fb923c', 'target-arrow-color': '#fb923c', 'width': 2, 'opacity': 0.9 } },
-]
+  { selector: 'edge.hl-in',  style: { 'line-color': t.edgeIn, 'target-arrow-color': t.edgeIn, 'width': 2.4, 'opacity': 1 } },
+  { selector: 'edge.hl-out', style: { 'line-color': t.edgeOut, 'target-arrow-color': t.edgeOut, 'width': 2.4, 'opacity': 1 } },
+  ]
+}
 
 // strip the longest shared path prefix so rows indent under their common ancestor.
 function trimRows(rows) {
@@ -216,7 +236,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
       if (!alive) return
       const { cyclic } = scc(model.entities, model.edges)
       const noteOf = new Map(model.entities.map(e => [e.id, e.note]))
-      const cy = cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: CY_STYLE })
+      const cy = cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) })
       // d2 grouping -> cytoscape compound parents. container ids + their ancestors.
       const groups = new Set()
       for (const e of model.entities) { let c = e.container; while (c && c !== 'root') { groups.add(c); c = parentOf(c) } }

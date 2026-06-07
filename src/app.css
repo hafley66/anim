@@ -231,6 +231,28 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
   .deck.nograph.nocode .narration { font-size: 17px; max-height: none; }
 }
 
+/* ---- atlas theme: single source of truth. Cytoscape (canvas) reads these via
+   getComputedStyle in AtlasPanel; the DOM panels use var() directly. Re-skin here. ---- */
+:root {
+  --atlas-surface:    #ffffff;   /* graph + panel background */
+  --atlas-panel-bg:   #fafafa;
+  --atlas-panel-line: #e2e8f0;
+  /* node tiers: context (faded) < base < cone < focal */
+  --atlas-node-fill:   #a5b4fc;  --atlas-node-text:   #1e293b;  --atlas-node-border:   #4f46e5;
+  --atlas-cone-fill:   #4f46e5;  --atlas-cone-text:   #ffffff;  --atlas-cone-border:   #312e81;
+  --atlas-focal-fill:  #1e1b4b;  --atlas-focal-text:  #ffffff;  --atlas-focal-halo:    #c7d2fe;
+  --atlas-ctx-fill:    #eef1f6;  --atlas-ctx-text:    #64748b;  --atlas-ctx-border:    #cbd5e1;
+  --atlas-ctx-opacity: 0.7;
+  /* edges */
+  --atlas-edge:     #cbd5e1;
+  --atlas-edge-out: #ea7c1f;     --atlas-edge-in: #16a34a;
+  /* semantic tags */
+  --atlas-hub-fill: #fde68a;     --atlas-hub-border: #f59e0b;
+  --atlas-hot:      #fde047;     --atlas-hot-border: #ca8a04;
+  /* DOM accents */
+  --atlas-row-hover: #eef2ff;    --atlas-muted: #94a3b8;  --atlas-link: #6366f1;
+}
+
 /* ---- atlas frame: narration is a fixed top strip, the atlas fills the rest ---- */
 .deck.atlas-frame { flex-direction: column; gap: 12px; max-width: 1240px; }
 .deck.atlas-frame .left { flex: 0 0 auto; gap: 6px; }
@@ -276,7 +298,7 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 .atlas-btn { font: inherit; cursor: pointer; padding: 2px 8px; border: 1px solid #cbd5e1;
   border-radius: 6px; background: #fff; }
 .atlas-btn:hover { background: #eef2ff; }
-.atlas-panel { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #fafafa; flex: 0 0 auto; }
+.atlas-panel { border: 1px solid var(--atlas-panel-line); border-radius: 8px; overflow: hidden; background: var(--atlas-panel-bg); flex: 0 0 auto; }
 .atlas-phead { display: flex; align-items: baseline; gap: 6px; padding: 5px 8px; cursor: pointer;
   font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: #475569;
   background: #f1f5f9; user-select: none; }
@@ -290,8 +312,8 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 .atlas-rows li { padding: 2px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 6px;
   align-items: baseline; min-width: 0; animation: atlasrowin .24s ease;
   content-visibility: auto; contain-intrinsic-size: auto 22px; }
-.atlas-rows li:hover { background: #eef2ff; }
-.atlas-rows li.hot { background: #fef08a; }
+.atlas-rows li:hover { background: var(--atlas-row-hover); }
+.atlas-rows li.hot { background: var(--atlas-hot); }
 .atlas-detail { padding: 5px 8px 8px; }
 .rid { color: #7c3aed; flex: 0 0 auto; }
 .rloc { color: #0ea5e9; font-size: 11px; flex: 1 1 auto; min-width: 0;
