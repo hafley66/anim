@@ -34,8 +34,8 @@ const supN = n => [...((n > 0 ? '+' : '') + n)].map(c => SUP[c] || c).join('')
 
 const CY_STYLE = [
   { selector: 'node', style: { 'label': 'data(lbl)', 'font-size': 11, 'font-family': 'ui-monospace,monospace',
-    'font-weight': 600, 'text-valign': 'center', 'color': '#1e293b', 'background-color': '#c7d2fe', 'border-width': 1.8,
-    'border-color': '#6366f1', 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
+    'font-weight': 600, 'text-valign': 'center', 'color': '#1e293b', 'background-color': '#a5b4fc', 'background-opacity': 1,
+    'border-width': 1.6, 'border-color': '#4f46e5', 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
   { selector: 'node[?grp]', style: {                                                          // d2 container
     'background-opacity': 0.06, 'background-color': '#64748b', 'border-color': '#94a3b8',
     'border-style': 'dashed', 'border-width': 1, 'shape': 'round-rectangle',
@@ -50,11 +50,12 @@ const CY_STYLE = [
   { selector: 'node.diff-del', style: { 'border-color': '#dc2626', 'background-color': '#fee2e2', 'border-style': 'dashed' } },
   { selector: 'node.diff-mod', style: { 'border-color': '#d97706', 'background-color': '#fef3c7' } },
   { selector: 'node.cyc', style: { 'border-color': '#dc2626', 'border-width': 2.5, 'border-style': 'double' } },
-  { selector: 'node.hl-focal', style: { 'border-width': 3.5, 'border-color': '#4338ca', 'background-color': '#818cf8', 'color': '#fff' } },
+  { selector: 'node.hl-cone', style: { 'background-color': '#6366f1', 'color': '#fff', 'border-color': '#4338ca', 'border-width': 2, 'opacity': 1 } },
+  { selector: 'node.hl-focal', style: { 'border-width': 4, 'border-color': '#c7d2fe', 'background-color': '#312e81', 'color': '#fff', 'opacity': 1, 'z-index': 99 } },
   { selector: 'node.heaton', style: { 'background-color': 'mapData(heat, 0, 1, #dbeafe, #b91c1c)', 'color': 'mapData(heat, 0.5, 1, #1e293b, #fff)' } },
   { selector: 'node.hot', style: { 'background-color': '#fef08a', 'border-color': '#eab308' } },     // cross-lit
-  { selector: 'node.faded', style: { 'opacity': 0.28 } },        // faded nodes stay legible
-  { selector: 'edge.faded', style: { 'opacity': 0.07 } },        // faded edges recede further
+  { selector: 'node.faded', style: { 'opacity': 0.5, 'background-color': '#e5e7eb', 'border-color': '#cbd5e1', 'color': '#9aa3b2' } }, // desaturate to gray scaffold, not just dim
+  { selector: 'edge.faded', style: { 'opacity': 0.08, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1' } }, // edges recede further
   { selector: '.iso-hide', style: { 'display': 'none' } },
   { selector: 'edge', style: { 'width': 1.4, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
     'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
@@ -166,9 +167,9 @@ export default function AtlasPanel({ d2, tours = {} }) {
       : mode === 'downstream' ? succ.union(node)
       : mode === 'upstream' ? pred.union(node)
       : succ.union(pred).union(node)
-    cy.elements().addClass('faded').removeClass('iso-hide hl-focal hl-in hl-out')
-    keep.removeClass('faded')
-    node.removeClass('faded').addClass('hl-focal')
+    cy.elements().addClass('faded').removeClass('iso-hide hl-focal hl-cone hl-in hl-out')
+    keep.nodes().not('[?grp]').removeClass('faded').addClass('hl-cone')
+    node.removeClass('faded hl-cone').addClass('hl-focal')
     succ.edges().intersection(keep).removeClass('faded').addClass('hl-out')
     pred.edges().intersection(keep).removeClass('faded').addClass('hl-in')
     if (S.current.isolate) cy.elements().difference(keep).addClass('iso-hide')
@@ -182,7 +183,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
 
   function showAll() {
     const { cy } = S.current
-    cy.elements().removeClass('faded hl-focal hl-in hl-out iso-hide')
+    cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide')
     cy.nodes().forEach(n => n.data('lbl', n.data('name')))
     cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 300 })
     setRefsFromView(new Set(cy.nodes().map(n => n.id())))
