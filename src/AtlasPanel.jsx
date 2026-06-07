@@ -12,7 +12,7 @@ import expandCollapse from 'cytoscape-expand-collapse'
 import Graph from 'graphology'
 import betweenness from 'graphology-metrics/centrality/betweenness.js'
 import { buildModel } from './core/d2.js'
-import { scc } from './core/tarjan.js'
+import { scc, topoTiers } from './core/tarjan.js'
 import { reachableRefs } from './core/views.js'
 import { atlasBus, HOVER } from './atlas-bus.js'
 
@@ -143,7 +143,7 @@ function detailFor(model, id) {
 
 const MODES = [['cone', 'cone (both)'], ['neighbors', '1-hop'], ['downstream', 'downstream'], ['upstream', 'upstream']]
 const LAYOUTS = [['dagre', 'dagre'], ['elk', 'elk'], ['breadthfirst', 'tree'], ['concentric', 'rings'], ['cose', 'force'], ['grid', 'grid']]
-const DIRECTIONAL = new Set(['dagre', 'elk'])
+const DIRECTIONAL = new Set(['dagre', 'elk', 'grid'])   // grid uses dir to pick the tier axis
 const DIRS = [['TB', '↓ TB'], ['LR', '→ LR'], ['BT', '↑ BT'], ['RL', '← RL']]
 
 export default function AtlasPanel({ d2, tours = {} }) {
@@ -223,8 +223,21 @@ export default function AtlasPanel({ d2, tours = {} }) {
       : layoutName === 'breadthfirst' ? { name: 'breadthfirst', directed: true, spacingFactor: 1.1, ...base }
       : layoutName === 'concentric' ? { name: 'concentric', minNodeSpacing: 24, ...base }
       : layoutName === 'cose' ? { name: 'cose', idealEdgeLength: 70, nodeRepulsion: 8000, ...base }
-      : { name: 'grid', ...base }
+      // d2-grid feel: every node sits in an exact (tier, column) cell; dir picks the axis.
+      : { name: 'grid', avoidOverlap: true, condense: false, position: gridPos, ...base }
     cy.layout(opts).run()
+  }
+
+  // map a node to its grid cell from the precomputed tier/tcol; rankDir flips the axis.
+  function gridPos(n) {
+    if (n.data('grp')) return undefined
+    const t = n.data('tier') ?? 0, c = n.data('tcol') ?? 0, m = S.current.maxTier || 0
+    switch (S.current.rankDir) {
+      case 'LR': return { row: c, col: t }
+      case 'RL': return { row: c, col: m - t }
+      case 'BT': return { row: m - t, col: c }
+      default:   return { row: t, col: c }   // TB
+    }
   }
 
   // build model + cytoscape once per d2 source
@@ -234,7 +247,17 @@ export default function AtlasPanel({ d2, tours = {} }) {
     ;(async () => {
       const model = await buildModel(d2)
       if (!alive) return
-      const { cyclic } = scc(model.entities, model.edges)
+      const { cyclic, comp } = scc(model.entities, model.edges)
+      // d2-grid-style tiering: Kahn longest-path layer, then a stable column index
+      // within each tier. Drives the grid layout's exact cell placement.
+      const tierMap = topoTiers(model.entities, model.edges, comp)
+      const tcolOf = {}, tierFill = {}
+      let maxTier = 0
+      for (const e of model.entities) {
+        const tr = tierMap.get(e.id) || 0; maxTier = Math.max(maxTier, tr)
+        const c = tierFill[tr] || 0; tcolOf[e.id] = c; tierFill[tr] = c + 1
+      }
+      S.current.maxTier = maxTier
       const noteOf = new Map(model.entities.map(e => [e.id, e.note]))
       const cy = cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) })
       // d2 grouping -> cytoscape compound parents. container ids + their ancestors.
@@ -252,6 +275,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
         if (n.data('grp')) return
         const id = n.id(), e = model.entities.find(x => x.id === id)
         n.data('heat', heatMap[id] ?? 0)
+        n.data('tier', tierMap.get(id) || 0); n.data('tcol', tcolOf[id] || 0)
         if (cyclic.has(id)) n.addClass('cyc')
         if (n.outdegree(false) === 0) n.addClass('leaf')
         if (e?.kind?.startsWith('diff-')) n.addClass(e.kind)
