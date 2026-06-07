@@ -8,11 +8,14 @@
 
 const clean = a => a.filter(Boolean)
 
-// fs: frr/zebra/zebra_rib.c:120 -> dirs/file, trailing :NNN as a leaf detail.
+// fs: frr/zebra/zebra_rib.c:120 -> dirs, then "file:line" baked into the leaf
+// segment (not a label override), so a collapsed lone chain keeps its full path.
 const fsPath = loc => {
   const [path, line] = String(loc).split(/:(?=\d+$)/)
   const segs = clean(path.split('/'))
-  if (line) segs.push({ seg: ':' + line, leaf: true, icon: '#' })
+  if (!segs.length) return segs
+  const i = segs.length - 1
+  segs[i] = { seg: line ? `${segs[i]}:${line}` : segs[i], leaf: true }
   return segs
 }
 // sql: table:predicate, with db.table.column nesting before the predicate.

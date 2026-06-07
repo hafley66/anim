@@ -309,24 +309,31 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 .atlas-phead .count { margin-left: auto; color: #94a3b8; }
 .atlas-panel.collapsed .atlas-rows, .atlas-panel.collapsed .atlas-detail, .atlas-panel.collapsed .atlas-tree { display: none; }
 
-/* ---- file-explorer tree: branch rows + twisties + indent guides ---- */
-.atlas-tree { list-style: none; margin: 0; padding: 4px; max-height: 26vh; overflow: auto; --ind: 13px; }
-.trow { display: flex; align-items: center; gap: 5px; cursor: pointer; border-radius: 5px; position: relative;
-  min-width: 0; padding: 2px 6px 2px calc(6px + min(var(--d), 8) * var(--ind)); animation: atlasrowin .18s ease;
-  content-visibility: auto; contain-intrinsic-size: auto 20px; }
-/* one faint vertical rule per ancestor level, drawn with a repeating gradient (no per-level DOM) */
-.trow::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; pointer-events: none;
-  width: calc(min(var(--d), 8) * var(--ind));
-  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--ind) - 1px),
-    var(--atlas-panel-line) calc(var(--ind) - 1px), var(--atlas-panel-line) var(--ind)); }
+/* ---- file-explorer tree (react-arborist rows; it positions + indents) ---- */
+.atlas-tree { padding: 3px 0; }
+.atlas-empty { padding: 4px 10px; font-size: 11px; }
+/* arborist passes position/height/paddingLeft via inline style; .trow fills it */
+.trow { box-sizing: border-box; height: 100%; width: 100%; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; padding-right: 8px; min-width: 0; position: relative; }
 .trow:hover { background: var(--atlas-row-hover); }
 .trow.hot { background: var(--atlas-hot); }
+/* border-bottom WEIGHT BAR: filled fraction = this row's share of its parent's
+   aggregate count (folders agg). The rest of the bottom edge is a faint rule. */
+.trow::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(to right,
+    var(--atlas-link) 0, var(--atlas-link) calc(var(--share, 0) * 100%),
+    var(--atlas-panel-line) calc(var(--share, 0) * 100%), var(--atlas-panel-line) 100%); opacity: .55; }
+.trow:hover::after { opacity: .85; }
 .trow .tw { width: 11px; flex: 0 0 11px; text-align: center; color: var(--atlas-muted); font-size: 9px; }
 .trow .ticon { width: 13px; flex: 0 0 13px; text-align: center; font-size: 10px; opacity: .8; }
 .trow .tlabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
 .trow.branch .tlabel { font-weight: 600; color: #334155; }
 .trow .tcount { color: var(--atlas-muted); font-size: 10px; flex: 0 0 auto; }
-.trow .rid { color: var(--atlas-link); opacity: .7; font-size: 10px; flex: 0 0 auto; }
+/* the node id each address binds to: hidden by default so the panel reads as a
+   plain file tree, revealed on hover/cross-light (the bound node also lights). */
+.trow .rid { color: var(--atlas-link); opacity: 0; font-size: 10px; flex: 0 1 auto; max-width: 42%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .12s; }
+.trow:hover .rid, .trow.hot .rid { opacity: .65; }
 .atlas-rows { list-style: none; margin: 0; padding: 4px; max-height: 26vh; overflow: auto; }
 .atlas-rows li { padding: 2px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 6px;
   align-items: baseline; min-width: 0; animation: atlasrowin .24s ease;

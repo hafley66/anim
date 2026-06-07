@@ -78,3 +78,24 @@ export function flattenTree(root, { isOpen } = {}) {
   walk(root)
   return out
 }
+
+// convert a TreeNode into a react-arborist forest: [{ id, children, ...payload }].
+// children:null marks a leaf (arborist infers isLeaf from that). `share` = this
+// node's count as a fraction of its parent's aggregate count (its weight among
+// siblings) -> the row's border-bottom bar. The renderer reads label/icon/ids/
+// count/share/title off each node.
+const conv = (n, parentTotal) => ({
+  id: n.key, label: n.label || n.seg, icon: n.icon, ids: n.ids, count: n.count,
+  share: parentTotal ? n.count / parentTotal : 1,
+  title: n.rows.map(r => r.locator).join('  ') || n.key,
+  children: n.children.size ? [...n.children.values()].map(c => conv(c, n.count)) : null,
+})
+export const toForest = root => {
+  const total = [...root.children.values()].reduce((s, c) => s + c.count, 0)
+  return [...root.children.values()].map(c => conv(c, total))
+}
+export const nodeCount = root => {
+  let c = 0
+  const walk = n => { for (const k of n.children.values()) { c++; walk(k) } }
+  walk(root); return c
+}
