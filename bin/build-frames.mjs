@@ -179,6 +179,9 @@ export function parseFrames(md) {
         const gname = parts[1] || cur.title.replace(/\W+/g, '-').toLowerCase()
         graphs.push({ name: gname, src: text })
         cur.graph = `/${gname}.svg`
+      } else if (kind === 'atlas') {
+        // interactive: keep the raw d2 on the frame; AtlasPanel parses it at runtime.
+        cur.atlas = text
       } else if (kind === 'sql-graph') {
         const gname = parts[1] || cur.title.replace(/\W+/g, '-').toLowerCase()
         graphs.push({ name: gname, kind: 'sql', db: parts[2], sql: text })
@@ -346,7 +349,7 @@ export function checkDeck() {
     const rel = path.relative(root, pf.file)
     for (const f of pf.frames) {
       const at = `${rel} › "${f.title}"`
-      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef) diags.push(`ERROR ${at}: empty frame`)
+      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas) diags.push(`ERROR ${at}: empty frame`)
       if (f.graph) { const n = f.graph.replace(/^\//, '').replace(/\.svg$/, ''); if (!graphNames.has(n)) diags.push(`ERROR ${at}: graph "${n}" is never defined`) }
       if (f.codeRef && !resolveCodeRef(f.codeRef)) diags.push(`ERROR ${at}: code: ${f.codeRef} did not resolve`)
       for (const L of f.links || []) if (!slugs.has(norm(L)) && !titles.has(norm(L))) diags.push(`WARN  ${at}: [[${L}]] resolves to nothing`)

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>workbench — core/ driving cytoscape + a synced fs panel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px ui-monospace,Menlo,monospace; height:100vh; display:flex; flex-direction:column; }
+  #bar { display:flex; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid #ddd; background:#f1f5f9; }
+  #bar button { font:inherit; cursor:pointer; padding:3px 9px; border:1px solid #cbd5e1; border-radius:5px; background:#fff; }
+  #bar button:hover { background:#eef2ff; }
+  #note { color:#4338ca; }
+  #shell { flex:1; display:flex; min-height:0; }
+  #left { flex:1; min-width:0; resize:horizontal; overflow:hidden; border-right:1px solid #ddd; }
+  #cy { width:100%; height:100%; }
+  #right { width:320px; min-width:220px; display:flex; flex-direction:column; background:#fafafa; }
+  .phead { display:flex; align-items:center; justify-content:space-between; padding:7px 9px;
+           font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#475569;
+           background:#f1f5f9; border-bottom:1px solid #e2e8f0; }
+  .phead button { font:inherit; font-size:11px; cursor:pointer; border:1px solid #cbd5e1; border-radius:5px; background:#fff; padding:1px 7px; }
+  #files { list-style:none; margin:0; padding:6px; overflow:auto; flex:1; }
+  #files li { padding:3px 7px; border-radius:5px; cursor:pointer; display:flex; gap:6px; align-items:center;
+              animation:rowin .28s ease; content-visibility:auto; contain-intrinsic-size:auto 26px; }
+  #files li:hover { background:#eef2ff; }
+  #files li.exit { animation:rowout .26s ease forwards; pointer-events:none; }
+  #files li .id { color:#7c3aed; }
+  #files li .loc { color:#0ea5e9; font-size:11px; }
+  @keyframes rowin  { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:none; } }
+  @keyframes rowout { from { opacity:1; } to { opacity:0; transform:translateX(10px); height:0; padding:0; } }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="prev">◀</button><button id="next">▶ step</button>
+  <button id="reset">reset</button>
+  <span id="note">core/ drives this graph. Click a node, or step the tour. Kept nodes never recreate.</span>
+</div>
+<div id="shell">
+  <div id="left"><div id="cy"></div></div>
+  <div id="right">
+    <div class="phead"><span>fs · refs reachable in view</span></div>
+    <ul id="files"></ul>
+  </div>
+</div>
+
+<script type="module">
+import { buildModel } from './core/d2.js';
+import { scc } from './core/tarjan.js';
+import { buildAdj, cone, pathFrontier, reachableRefs } from './core/views.js';
+import { transitionViews, transitionRefs } from './core/transition.js';
+import { Bus, SELECT } from './core/bus.js';
+
+cytoscape.use(window.cytoscapeDagre);
+const $ = id => document.getElementById(id);
+const DIM = 0.1, DUR = 380;
+
+const D2TEXT = `net: L3 {
+  ip
+  route
+  nexthop
+}
+overlay: VXLAN {
+  vxlan
+  vtep
+}
+link: L2 {
+  ethernet
+  mac
+}
+net.ip -> net.route
+net.route -> net.nexthop
+net.nexthop -> net.route
+net.nexthop -> link.ethernet
+overlay.vxlan -> overlay.vtep
+overlay.vxlan -> link.ethernet
+overlay.vtep -> net.ip
+link.ethernet -> link.mac
+
+# @ net.route : RIB lookup, longest-prefix match
+# @ net.nexthop : recursive resolution (the SCC)
+# src net.route = frr/zebra/zebra_rib.c:120
+# src net.nexthop = frr/zebra/zebra_nhg.c:88
+# src overlay.vxlan = linux/drivers/net/vxlan/vxlan_core.c:2800
+# src link.ethernet = linux/net/ethernet/eth.c:40`;
+
+const TOUR = [
+  { focus: 'overlay.vxlan', note: 'VXLAN cone: what the overlay rides on.' },
+  { path: ['overlay.vxlan', 'overlay.vtep', 'net.ip', 'net.route'], note: 'Overlay → VTEP → IP → route. fs panel fills with each ref reached.' },
+  { path: ['net.route', 'net.nexthop'], note: 'The recursive nexthop step (SCC).' },
+  { focus: 'link.ethernet', note: 'Where everything bottoms out at L2.' },
+];
+
+const model = await buildModel(D2TEXT);          // mini-parser (deterministic, no WASM)
+const adj = buildAdj(model);
+const { cyclic } = scc(model.entities, model.edges);
+
+const cy = cytoscape({
+  container: $('cy'), wheelSensitivity: 0.2,
+  style: [
+    { selector: 'node', style: { 'label': 'data(label)', 'font-size': 11, 'font-family': 'ui-monospace,monospace',
+      'text-valign': 'center', 'color': '#1e293b', 'background-color': '#e0e7ff', 'border-width': 1.5,
+      'border-color': '#818cf8', 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
+    { selector: 'node.cyc', style: { 'border-color': '#dc2626', 'border-width': 2.5, 'border-style': 'double' } },
+    { selector: 'node.focal', style: { 'border-width': 3.5, 'border-color': '#4338ca', 'background-color': '#c7d2fe' } },
+    { selector: 'edge', style: { 'width': 1.4, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
+  ],
+});
+// add the WHOLE graph once; views fade subsets. Layout runs once -> kept nodes never move = max constancy.
+cy.add(model.entities.map(e => ({ group: 'nodes', data: { id: e.id, label: e.label } })));
+cy.add(model.edges.map(e => ({ group: 'edges', data: { id: e.id, source: e.source, target: e.target } })));
+cy.nodes().forEach(n => { if (cyclic.has(n.id())) n.addClass('cyc'); });
+cy.layout({ name: 'dagre', rankDir: 'TB', nodeSep: 18, rankSep: 50 }).run();
+
+const fadeNode = (id, o) => cy.$id(id).animate({ style: { opacity: o } }, { duration: DUR });
+const fadeEdge = fadeNode;
+const allView = { entityIds: new Set(model.entities.map(e => e.id)), edgeIds: new Set(model.edges.map(e => e.id)) };
+let curView = null, prevFiles = [];
+
+const bus = new Bus();
+
+function applyView(next) {
+  transitionViews(curView, next, {
+    enterNode: id => fadeNode(id, 1), moveNode: id => fadeNode(id, 1), exitNode: id => fadeNode(id, DIM),
+    enterEdge: id => fadeEdge(id, 1), moveEdge: id => fadeEdge(id, 1), exitEdge: id => fadeEdge(id, DIM),
+  });
+  cy.nodes().removeClass('focal');
+  if (next.focus) cy.$id(next.focus).addClass('focal');
+  const vis = cy.nodes().filter(n => next.entityIds.has(n.id()));
+  if (vis.nonempty()) cy.animate({ fit: { eles: vis, padding: 70 } }, { duration: DUR });
+  applyFiles(reachableRefs(model, next, 'fs'));
+  curView = next;
+}
+
+const fkey = r => r.panel + ':' + r.locator;
+const rowFor = k => $('files').querySelector(`li[data-key="${CSS.escape(k)}"]`);
+function applyFiles(files) {
+  transitionRefs(prevFiles, files, {
+    enter: r => {
+      const li = document.createElement('li');
+      li.dataset.key = fkey(r);
+      li.innerHTML = `<span class="id">${r.id}</span><span class="loc">${r.locator}</span>`;
+      li.onclick = () => bus.emit(SELECT, r.id);
+      $('files').append(li);
+    },
+    exit: r => { const li = rowFor(fkey(r)); if (li) { li.classList.add('exit'); setTimeout(() => li.remove(), 280); } },
+  });
+  prevFiles = files;
+}
+
+bus.on(SELECT, id => { if (cy.$id(id).nonempty()) applyView(cone(model, id, 'cone', adj)); });
+cy.on('tap', 'node', e => bus.emit(SELECT, e.target.id()));
+cy.on('tap', e => { if (e.target === cy) applyView(allView); });
+
+let ti = -1;
+function step(d) {
+  ti = (ti + d + TOUR.length) % TOUR.length;
+  const s = TOUR[ti];
+  applyView(s.path ? pathFrontier(model, s.path) : cone(model, s.focus, 'cone', adj));
+  $('note').textContent = `${ti + 1}/${TOUR.length} · ${s.note}`;
+}
+$('next').onclick = () => step(1);
+$('prev').onclick = () => step(-1);
+$('reset').onclick = () => { ti = -1; applyView(allView); $('note').textContent = 'Full graph. Step the tour or click a node.'; };
+
+applyView(allView);
+</script>
+</body>
+</html>

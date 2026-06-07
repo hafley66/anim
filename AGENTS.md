@@ -60,6 +60,41 @@ build -> read
   instead of styling it: `myNode.class: hub`. Classes: `fn`, `relation`, `type`,
   `module`, `sink`, `dead`, `hub`, `ghost`. (Edit `src/kit.d2` to change them.)
 
+## Right panel — interactive atlas
+
+Same d2 grammar, but as an `atlas` block: the panel becomes a **live cytoscape
+graph** the reader explores (instead of a static drawn-on SVG). Click a node →
+its **cone** (everything it reaches); the layout is fixed, only the subset fades,
+so nothing flickers.
+
+````markdown
+```atlas netstack
+net.ip -> net.route
+net.route -> net.nexthop
+
+# @ net.route : RIB lookup, longest-prefix match
+# src net.route = frr/zebra/zebra_rib.c:120
+# ref sql net.route = routes:dest=10.0.0.0/8
+# ref api net.nexthop = GET /v1/nexthops/{id}
+```
+````
+
+- `# @ id : text` annotates a node (shows in the detail panel).
+- `# src id = path:line` and `# ref <panel> id = locator` give a node a per-panel
+  **address** (`fs`/`sql`/`api`). As nodes come into the cone, their addresses
+  stream into that panel's list. `# src` is the fs shorthand.
+- `# tag id : hub,sink` styles a node by category (hub/sink/dead/ghost + fn/type/
+  module/relation). `# diff add|del|mod id` tints add/del/mod. Cycles auto-color.
+- d2 **containers** (`net: L3 { ip; route }`) render as compound boxes you can lay out.
+- **Pin the slice** the slide opens on with one comment:
+  `# view focus=net.nexthop mode=cone layout=elk dir=LR iso`
+  (mode = cone|neighbors|downstream|upstream; layout = dagre|elk|tree|rings|force|grid;
+  dir = TB|LR|BT|RL). The reader hits **⤢ expand** to open the same picture full-screen
+  with every knob (layout, direction, cone mode, isolate, tooltips), Esc to collapse.
+- Backed by `src/core/` (the shared model) + `src/AtlasPanel.jsx`. The static
+  graph and the atlas are two renderers over one model; the node id is the join
+  key. One frame uses one right panel: atlas OR graph OR fs OR git.
+
 ## Right panel — graph (from a database)
 
 Render a SQL query result as a graph (DB opened **read-only**):

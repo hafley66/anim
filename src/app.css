@@ -230,3 +230,80 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
   .deck.nograph.nocode .left { max-width: 100%; margin: 0; }
   .deck.nograph.nocode .narration { font-size: 17px; max-height: none; }
 }
+
+/* ---- atlas frame: narration is a fixed top strip, the atlas fills the rest ---- */
+.deck.atlas-frame { flex-direction: column; gap: 12px; max-width: 1240px; }
+.deck.atlas-frame .left { flex: 0 0 auto; gap: 6px; }
+.deck.atlas-frame .right { flex: 1; min-height: 0; width: 100%; }
+.narration.clamp { height: 84px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.showmore { align-self: flex-start; font: inherit; font-size: 12px; cursor: pointer;
+  background: none; border: none; color: #88c0d0; padding: 0; }
+
+/* ---- AtlasPanel: interactive cytoscape + reachable-ref sub-panels ---- */
+.atlas { height: 100%; display: flex; gap: 10px; min-height: 0; min-width: 0;
+  font: 12px ui-monospace, Menlo, monospace; color: #1e293b; }
+/* click-into: the same panel fills the viewport. The picture is unchanged because
+   it is the same component instance — only the container grew. */
+.atlas--full { position: fixed; inset: 0; z-index: 60; background: #fff; padding: 12px;
+  box-shadow: 0 0 0 100vmax rgba(15,23,42,.35); }
+.atlas--full .atlas-side { flex-basis: 360px; max-width: 380px; }
+.atlas-full-btn { margin-left: auto; }
+.atlas-graph { flex: 1 1 0; min-width: 280px; border-radius: 10px; overflow: hidden; background: #fff; position: relative; }
+/* native popover tooltip, anchored to a 1px element placed at the hovered node.
+   top-layer => escapes .atlas-graph overflow:hidden, no z-index war. */
+.atlas-anchor { position: absolute; width: 1px; height: 1px; anchor-name: --atlasnode; pointer-events: none; }
+.atlas-tip {
+  margin: 0; border: 0; padding: 4px 7px; max-width: 220px; pointer-events: none;
+  background: #0f172a; color: #e2e8f0; font: 11px ui-monospace, Menlo, monospace; border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  position-anchor: --atlasnode; position-area: top center; margin-bottom: 6px;
+  position-try-fallbacks: flip-block;
+  transition: opacity .12s, overlay .12s allow-discrete, display .12s allow-discrete; opacity: 1;
+}
+.atlas-tip:not(:popover-open) { opacity: 0; }
+@starting-style { .atlas-tip:popover-open { opacity: 0; } }
+.atlas-sel { font: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+.atlas-chk { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #475569; }
+.dtags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 4px; }
+.dtag { font-size: 10px; background: #ede9fe; color: #6d28d9; border-radius: 4px; padding: 1px 6px; }
+/* node names in the prose: hover lights the matching graph node */
+.natlas { color: #c4b5fd; border-bottom: 1px dotted #8b5cf6; cursor: help; }
+.natlas:hover { background: #fef08a33; color: #ddd6fe; }
+.atlas-side { flex: 0 0 300px; max-width: 340px; min-width: 220px; display: flex; flex-direction: column;
+  gap: 6px; overflow: auto; }
+.atlas-bar { display: flex; flex-wrap: wrap; gap: 5px; }
+.atlas-btn { font: inherit; cursor: pointer; padding: 2px 8px; border: 1px solid #cbd5e1;
+  border-radius: 6px; background: #fff; }
+.atlas-btn:hover { background: #eef2ff; }
+.atlas-panel { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #fafafa; flex: 0 0 auto; }
+.atlas-phead { display: flex; align-items: baseline; gap: 6px; padding: 5px 8px; cursor: pointer;
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: #475569;
+  background: #f1f5f9; user-select: none; }
+.atlas-phead .caret { color: #94a3b8; transition: transform .15s; }
+.atlas-panel.collapsed .caret { transform: rotate(-90deg); }
+.atlas-phead .pprefix { color: #94a3b8; text-transform: none; letter-spacing: 0; font-size: 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atlas-phead .count { margin-left: auto; color: #94a3b8; }
+.atlas-panel.collapsed .atlas-rows, .atlas-panel.collapsed .atlas-detail { display: none; }
+.atlas-rows { list-style: none; margin: 0; padding: 4px; max-height: 26vh; overflow: auto; }
+.atlas-rows li { padding: 2px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 6px;
+  align-items: baseline; min-width: 0; animation: atlasrowin .24s ease;
+  content-visibility: auto; contain-intrinsic-size: auto 22px; }
+.atlas-rows li:hover { background: #eef2ff; }
+.atlas-rows li.hot { background: #fef08a; }
+.atlas-detail { padding: 5px 8px 8px; }
+.rid { color: #7c3aed; flex: 0 0 auto; }
+.rloc { color: #0ea5e9; font-size: 11px; flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.muted { color: #94a3b8; padding: 4px 0; }
+.dnote { color: #334155; padding: 2px 0 6px; line-height: 1.4; }
+.dgroup { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; padding: 5px 0 1px; }
+@keyframes atlasrowin { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+/* responsive: narrow viewport -> graph on top, panels wrap below */
+@media (max-width: 880px) {
+  .atlas { flex-direction: column; }
+  .atlas-side { flex: 0 0 auto; max-width: none; flex-direction: row; flex-wrap: wrap; }
+  .atlas-side .atlas-panel { flex: 1 1 220px; }
+  .atlas-bar { flex-basis: 100%; }
+}

@@ -2,6 +2,9 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { ShikiMagicMove } from 'shiki-magic-move/react'
 import { marked } from 'marked'
 import panzoom from 'panzoom'
+import AtlasPanel from './AtlasPanel.jsx'
+import { miniParseD2 } from './core/d2.js'
+import { atlasBus, HOVER } from './atlas-bus.js'
 
 // One frame === one idea. Code and graph are both OPTIONAL: a frame can be pure
 // prose (a durable discussion note), prose + code, prose + graph, or all three.
@@ -41,16 +44,46 @@ function wrapGlossary(root, gloss) {
   }
 }
 
+// Wrap occurrences of atlas node names in the prose with a hover target, so
+// hovering a node's name lights the matching cytoscape node (via atlasBus).
+// tokenMap: lowercased token -> node id to light. Skips code/links/already-wrapped.
+function wrapAtlas(root, tokenMap) {
+  if (!root || !tokenMap.size) return
+  const toks = [...tokenMap.keys()].sort((a, b) => b.length - a.length).map(reEscape)
+  const re = new RegExp(`(?<![\\w.])(${toks.join('|')})(?![\\w.])`, 'i')
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => (n.nodeValue.trim() && !n.parentElement.closest('a, code, abbr, .natlas')) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  })
+  const targets = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) targets.push(n)
+  for (const tn of targets) {
+    const text = tn.nodeValue, rg = new RegExp(re.source, 'ig')
+    let m, last = 0, found = false
+    const frag = document.createDocumentFragment()
+    while ((m = rg.exec(text))) {
+      const id = tokenMap.get(m[0].toLowerCase()); if (!id) continue
+      found = true
+      frag.appendChild(document.createTextNode(text.slice(last, m.index)))
+      const sp = document.createElement('span')
+      sp.className = 'natlas'; sp.dataset.atlas = id; sp.textContent = m[0]
+      frag.appendChild(sp)
+      last = m.index + m[0].length
+    }
+    if (found) { frag.appendChild(document.createTextNode(text.slice(last))); tn.replaceWith(frag) }
+  }
+}
+
 export default function Frames({ frames, highlighter, theme, glossary }) {
   const start = Math.min(Number(sessionStorage.getItem('frame') || 0), frames.length - 1)
   const [i, setI] = useState(start)
   const [outline, setOutline] = useState(false)
   const [map, setMap] = useState(false)
   const [lit, setLit] = useState(null) // graph node labels to highlight on anchor hover
+  const [more, setMore] = useState(false) // narration show-more (atlas frames keep a fixed top)
   const codeWrapRef = useRef(null)
   const narrationRef = useRef(null)
   useEffect(() => { sessionStorage.setItem('frame', String(i)) }, [i])
-  useEffect(() => { setLit(null) }, [i])
+  useEffect(() => { setLit(null); setMore(false) }, [i])
   const f = frames[i]
 
   // anchor hover: light the graph node(s) and the matching code token together
@@ -61,8 +94,24 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
   }
   const hoverAnchor = (a, on) => { setLit(on ? a.nodes : null); markCode(a.token, on) }
 
-  // wrap glossary terms in the narration after each frame renders
-  useEffect(() => { wrapGlossary(narrationRef.current, glossary) }, [i, glossary])
+  // atlas node names mentioned in this frame's prose -> id to light on hover
+  const atlasTokens = useMemo(() => {
+    const map = new Map()
+    if (f.atlas) for (const n of miniParseD2(f.atlas).nodes) { map.set(n.id.toLowerCase(), n.id); if (n.name) map.set(n.name.toLowerCase(), n.id) }
+    return map
+  }, [f.atlas])
+
+  // wrap glossary terms + atlas node names after each frame renders; bridge hover -> atlasBus
+  useEffect(() => {
+    wrapGlossary(narrationRef.current, glossary)
+    wrapAtlas(narrationRef.current, atlasTokens)
+    const root = narrationRef.current
+    if (!root || !atlasTokens.size) return
+    const over = e => { const t = e.target.closest('.natlas'); if (t) atlasBus.emit(HOVER, t.dataset.atlas) }
+    const out = e => { if (e.target.closest('.natlas')) atlasBus.emit(HOVER, null) }
+    root.addEventListener('mouseover', over); root.addEventListener('mouseout', out)
+    return () => { root.removeEventListener('mouseover', over); root.removeEventListener('mouseout', out) }
+  }, [i, glossary, atlasTokens])
   const go = (d) => setI((p) => Math.max(0, Math.min(frames.length - 1, p + d)))
 
   useEffect(() => {
@@ -79,7 +128,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
 
   const hasCode = !!(f.code && f.code.trim())
   const hasGraph = !!f.graph
-  const hasRight = !!(f.graph || f.fs || f.git)
+  const hasRight = !!(f.graph || f.fs || f.git || f.atlas)
   const html = useMemo(() => {
     // render [[other-slide]] cross-links as styled references
     const src = (f.narration || '').replace(/\[\[([^\]]+)\]\]/g, '<span class="xref">$1</span>')
@@ -100,7 +149,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
 
   return (
     <div className="stage">
-      <div className={`deck${hasRight ? '' : ' nograph'}${hasCode ? '' : ' nocode'}`}>
+      <div className={`deck${hasRight ? '' : ' nograph'}${hasCode ? '' : ' nocode'}${f.atlas ? ' atlas-frame' : ''}`}>
         <div className="left">
           <div className="head">
             <div className="counter">
@@ -109,7 +158,10 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
             </div>
             <h2 className="title">{f.title}</h2>
           </div>
-          <div ref={narrationRef} key={i} className={`narration fade md${hasCode ? '' : ' grow'}`} dangerouslySetInnerHTML={{ __html: html }} />
+          <div ref={narrationRef} key={i}
+               className={`narration fade md${hasCode ? '' : ' grow'}${f.atlas && !more ? ' clamp' : ''}`}
+               dangerouslySetInnerHTML={{ __html: html }} />
+          {f.atlas && <button className="showmore" onClick={() => setMore(v => !v)}>{more ? 'show less ▲' : 'show more ▼'}</button>}
           {hasCode && (
             <div className="code" ref={codeWrapRef}>
               <ShikiMagicMove
@@ -139,7 +191,8 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
         </div>
         {hasRight && (
           <div className="right">
-            {f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
+            {f.atlas ? <AtlasPanel d2={f.atlas} />
+              : f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
               : f.fs ? <div className="fs-card"><FsTree tree={f.fs} /></div>
               : <Graph src={f.graph} lit={lit} />}
           </div>

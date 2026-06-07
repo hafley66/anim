@@ -12,9 +12,18 @@
     "build:md": "node bin/build-frames.mjs",
     "frames": "node bin/from-git.mjs",
     "graphs": "bash bin/render-d2.sh",
-    "shoot": "node bin/shoot.mjs"
+    "shoot": "node bin/shoot.mjs",
+    "shoot:atlas": "node bin/shoot-atlas.mjs"
   },
   "dependencies": {
+    "cytoscape": "^3.30.2",
+    "cytoscape-dagre": "^2.5.0",
+    "cytoscape-elk": "^2.3.0",
+    "cytoscape-expand-collapse": "^4.1.1",
+    "dagre": "^0.8.5",
+    "elkjs": "^0.11.1",
+    "graphology": "^0.26.0",
+    "graphology-metrics": "^2.4.0",
     "marked": "^18.0.4",
     "panzoom": "^9.4.4",
     "react": "^18.3.1",

@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>d2 atlas — annotated graph + tours</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+<script src="atlases/index.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px ui-monospace,Menlo,monospace; display:flex; height:100vh; overflow:hidden; }
+
+  #side { width:320px; min-width:220px; display:flex; flex-direction:column;
+          border-right:1px solid #ddd; background:#fafafa; resize:horizontal; overflow:hidden; }
+  #side h4 { margin:0; padding:7px 9px; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+             color:#475569; background:#f1f5f9; border-bottom:1px solid #e2e8f0; }
+  #tree { flex:1; overflow:auto; padding:6px; }
+  .mod  { margin-bottom:4px; }
+  .mod > .mhead { display:flex; gap:6px; align-items:center; cursor:pointer; padding:2px 4px;
+                  color:#7c3aed; font-weight:bold; border-radius:4px; }
+  .mod > .mhead:hover { background:#eef2ff; }
+  .mod.api > .mhead { color:#0369a1; }
+  .row { display:flex; align-items:center; gap:6px; padding:1px 4px 1px 22px; white-space:nowrap;
+         cursor:pointer; border-radius:4px; }
+  .row:hover { background:#eef2ff; }
+  .row .dot { width:8px; height:8px; border-radius:50%; background:#94a3b8; flex:none; }
+  .row.cyc .dot { background:#dc2626; box-shadow:0 0 0 2px #fecaca; }
+  .row.api .dot { background:#0ea5e9; border-radius:2px; }
+  .row .badge { color:#9ca3af; font-size:11px; }
+
+  details { border-top:1px solid #e2e8f0; }
+  summary { padding:5px 9px; cursor:pointer; color:#475569; user-select:none; }
+  textarea { width:100%; height:170px; border:0; border-top:1px solid #e2e8f0; padding:7px;
+             font:11px ui-monospace,Menlo,monospace; resize:vertical; background:#fff; }
+  .acts { display:flex; gap:6px; padding:6px 9px; flex-wrap:wrap; }
+  button { font:inherit; cursor:pointer; padding:3px 9px; border:1px solid #cbd5e1; border-radius:5px;
+           background:#fff; }
+  button:hover { background:#eef2ff; }
+
+  #main { flex:1; display:flex; flex-direction:column; min-width:0; position:relative; }
+  #bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 9px;
+         border-bottom:1px solid #ddd; background:#f1f5f9; }
+  #bar label { display:flex; gap:4px; align-items:center; color:#475569; }
+  #bar select { font:inherit; }
+  #stat { color:#64748b; font-size:11px; }
+  #legend { margin-left:auto; color:#64748b; font-size:11px; }
+  #legend b.in { color:#16a34a; } #legend b.out { color:#ea580c; } #legend b.cy { color:#dc2626; }
+  #cy { flex:1; }
+  #leader { position:fixed; inset:0; pointer-events:none; z-index:50; }
+  #tip { position:fixed; z-index:60; pointer-events:none; max-width:300px; padding:5px 8px;
+         background:rgba(15,23,42,.95); color:#e2e8f0; border-radius:6px; font-size:11.5px;
+         line-height:1.4; box-shadow:0 6px 18px rgba(0,0,0,.35); display:none; white-space:pre-line; }
+  .row .src { margin-left:6px; color:#0ea5e9; font-size:10px; text-decoration:none; opacity:.85; }
+  .row .src:hover { text-decoration:underline; opacity:1; }
+  .row.rk { background:#eef2ff; }
+  .row.rk.foc { background:#ddd6fe; font-weight:bold; }
+  .row .ann { color:#a78bfa; margin-left:4px; }
+  #tourpick { font:inherit; width:100%; margin:0; }
+  #share { margin-left:6px; }
+  #detail { border-top:1px solid #e2e8f0; padding:8px 9px; font-size:11.5px; color:#334155;
+            max-height:38%; overflow:auto; display:none; background:#fff; }
+  #detail.on { display:block; }
+  #detail h5 { margin:0 0 4px; font-size:12px; color:#4338ca; word-break:break-all; }
+  #detail .meta { color:#64748b; margin:2px 0; }
+  #detail .note { margin:5px 0; padding:5px 7px; background:#f5f3ff; border-radius:5px; color:#3730a3; }
+  #detail a { color:#0ea5e9; }
+  #detail .chip { display:inline-block; padding:0 6px; margin:1px 3px 1px 0; border-radius:9px;
+                  background:#eef2ff; color:#4338ca; font-size:10.5px; cursor:pointer; }
+  #detail .chip:hover { background:#ddd6fe; }
+  body.dark #detail { background:#0b1220; color:#cbd5e1; border-color:#1f2937; }
+  body.dark #detail .note { background:#1e1b4b; color:#ddd6fe; }
+  body.dark #detail .chip { background:#1e293b; color:#a78bfa; }
+
+  #tournote { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); z-index:8;
+              max-width:70%; padding:9px 14px; background:rgba(30,27,75,.94); color:#ede9fe;
+              border-radius:9px; box-shadow:0 8px 26px rgba(15,23,42,.4); font-size:12.5px; line-height:1.4; }
+  #tournote .step { color:#a78bfa; font-weight:bold; margin-right:8px; }
+  #tournote .nav { float:right; margin-left:14px; }
+  #tournote .nav b { cursor:pointer; padding:0 5px; }
+  .tstep { padding:3px 6px; border-radius:4px; cursor:pointer; color:#475569; }
+  .tstep:hover { background:#eef2ff; }
+  .tstep.on { background:#ddd6fe; color:#1e1b4b; font-weight:bold; }
+  .tstep .n { color:#7c3aed; }
+
+  body.dark { background:#0f172a; }
+  body.dark #side { background:#111827; border-color:#1f2937; }
+  body.dark #side h4 { background:#0b1220; color:#94a3b8; border-color:#1f2937; }
+  body.dark #bar { background:#0b1220; border-color:#1f2937; color:#cbd5e1; }
+  body.dark #bar label, body.dark #stat, body.dark #legend, body.dark summary { color:#94a3b8; }
+  body.dark button, body.dark select, body.dark textarea { background:#1e293b; color:#e2e8f0; border-color:#334155; }
+  body.dark .mod > .mhead { color:#a78bfa; }
+  body.dark .mod.api > .mhead { color:#38bdf8; }
+  body.dark .row { color:#cbd5e1; }
+  body.dark .row:hover, body.dark .row.rk { background:#1e293b; }
+  body.dark .row.rk.foc { background:#3730a3; color:#ede9fe; }
+  body.dark details, body.dark .acts, body.dark summary { border-color:#1f2937; }
+  body.dark .tstep { color:#94a3b8; } body.dark .tstep:hover { background:#1e293b; }
+</style>
+</head>
+<body>
+
+<div id="side">
+  <h4 style="display:flex;align-items:center;gap:6px;justify-content:space-between">
+    <span>tree map</span>
+    <select id="groupby" style="font:inherit;font-size:11px">
+      <option value="container">by container</option>
+      <option value="source">by source folder</option>
+      <option value="tag">by tag / protocol</option>
+      <option value="kind">by kind (api/leaf/cycle)</option>
+    </select>
+  </h4>
+  <div id="tree"></div>
+  <div id="detail"></div>
+
+  <details>
+    <summary>d2 source (a -> b · containers · # = annotations)</summary>
+    <textarea id="src"></textarea>
+    <div class="acts"><button id="apply">apply</button><button id="sample">reset sample</button></div>
+  </details>
+  <details open>
+    <summary>guided tours (AI-authored, pick one)</summary>
+    <div style="padding:4px 9px"><select id="tourpick"></select></div>
+    <textarea id="tour"></textarea>
+    <div class="acts"><button id="loadtour">apply edits</button><button id="prev">◀</button>
+      <button id="next">▶ play</button></div>
+    <div id="tourlist" style="padding:4px 9px"></div>
+  </details>
+</div>
+
+<div id="main">
+  <div id="bar">
+    <label>atlas <select id="topic"></select></label>
+    <label>cone
+      <select id="mode">
+        <option value="neighbors">neighbors (1-hop)</option>
+        <option value="downstream">downstream → ends (deps)</option>
+        <option value="upstream">upstream ← callers</option>
+        <option value="cone" selected>full cone (both)</option>
+      </select>
+    </label>
+    <label>tiers
+      <select id="rankdir">
+        <option value="TB" selected>top→down</option>
+        <option value="LR">left→right</option>
+        <option value="BT">bottom→up</option>
+        <option value="RL">right→left</option>
+      </select>
+    </label>
+    <label>rank
+      <select id="ranker">
+        <option value="network-simplex" selected>compact</option>
+        <option value="tight-tree">tight-tree</option>
+        <option value="longest-path">longest-path</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="cyc"> cycles (SCC)</label>
+    <label><input type="checkbox" id="isolate"> isolate (hide rest)</label>
+    <label><input type="checkbox" id="sticky" checked> sticky (click)</label>
+    <button id="relayout">re-layout</button>
+    <button id="topo">topo tiers</button>
+    <button id="fit">fit</button>
+    <button id="theme">◐ dark</button>
+    <button id="share">⧉ copy link</button>
+    <span id="stat"></span>
+    <span id="legend">
+      <b class="in">━ in</b> · <b class="out">━ out</b> · <b class="cy">◯ cycle</b> · ┄ leader→sidebar
+    </span>
+  </div>
+  <div id="cy"></div>
+  <div id="tournote" hidden></div>
+</div>
+<svg id="leader"></svg>
+<div id="tip"></div>
+
+<script type="module">
+cytoscape.use(window.cytoscapeDagre);
+const $ = id => document.getElementById(id);
+
+// ── D2 WASM (the "fuel"). Mini-parser is the fallback if the WASM fails to load.
+let D2 = null;
+try { ({ D2 } = await import('https://esm.sh/@terrastruct/d2')); }
+catch (e) { console.warn('d2 wasm import failed, using mini-parser', e); }
+
+// ── placeholder content. Real atlases live in external `<topic>.atlas.js` files
+//    (window.ATLAS = {d2, tours}); open atlas.html?src=<topic> to load one.
+//    edge a -> b = "a depends on / rides on b". `#` lines are annotations.
+const SAMPLE = `# minimal demo — open atlas.html?src=networking for the real one
+a: example {
+  start
+  middle
+  end
+}
+a.start -> a.middle
+a.middle -> a.end
+a.end -> a.middle
+
+# @ a.start : entry point
+# @ a.middle -> a.end : the dependency edge
+# tag a.middle : recursive`;
+
+const TOURS = {
+  "demo walk": [
+    { focus: "a.start", isolate: false, note: "Click any node to pin its cone; switch the tree-map dropdown to regroup." },
+    { path: ["a.start", "a.middle", "a.end"], isolate: true, note: "A path step isolates the chain. end → middle is the cycle." },
+  ],
+};
+
+// ── D2 → common Graph: { nodes:[{id,name,mod,api}], edges:[{id,source,target,label}] }
+//    container shapes (any id that is a dotted prefix of another) become folders, not nodes.
+const lastSeg = id => id.includes('.') ? id.slice(id.lastIndexOf('.') + 1) : id;
+const parentOf = id => id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : 'root';
+function dropContainers(nodes) {
+  const ids = nodes.map(n => n.id);
+  const isC = id => ids.some(o => o !== id && o.startsWith(id + '.'));
+  return nodes.filter(n => !isC(n.id));
+}
+async function d2ToGraph(src) {
+  if (!D2) throw new Error('wasm unavailable');
+  const res = await new D2().compile(src);
+  const dg = res.diagram || res;
+  const shapes = dg.shapes || [], conns = dg.connections || [];
+  if (!shapes.length) throw new Error('no shapes from wasm');
+  let ei = 0;
+  const nodes = shapes.map(s => ({ id: s.id, name: s.label || lastSeg(s.id), mod: parentOf(s.id), api: false }));
+  const edges = conns.map(c => ({ id: c.src + '>>' + c.dst + '#' + (ei++), source: c.src, target: c.dst, label: c.label || '' }));
+  return { nodes: dropContainers(nodes), edges, engine: 'wasm' };
+}
+// hand-written fallback: a->b, containers `key: label {`, plain `key`/`key: label`, # comments.
+function miniParseD2(text) {
+  const nodes = new Map(), edges = []; const stack = []; let ei = 0;
+  const qual = k => stack.length ? stack.join('.') + '.' + k : k;
+  const ensure = (id, label) => { if (!nodes.has(id)) nodes.set(id, { id, name: label || lastSeg(id), mod: parentOf(id), api: false }); return nodes.get(id); };
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*$/, '').trim();
+    if (!line) continue;
+    if (line === '}') { stack.pop(); continue; }
+    const em = line.match(/^(.+?)\s*->\s*(.+?)(?::\s*(.+))?$/);
+    if (em && !em[1].includes('{')) {
+      const a = qual(em[1].trim()), b = qual(em[2].trim());
+      ensure(a); ensure(b);
+      edges.push({ id: a + '>>' + b + '#' + (ei++), source: a, target: b, label: (em[3] || '').replace(/^["']|["']$/g, '') });
+      continue;
+    }
+    const cm = line.match(/^([\w.\-]+)\s*(?::\s*([^{]*?))?\s*\{$/);    // key { | key: label {
+    if (cm) { const k = cm[1].trim(); ensure(qual(k), (cm[2] || '').replace(/^["']|["']$/g, '').trim() || undefined); stack.push(k); continue; }
+    const nm = line.match(/^([\w.\-]+)\s*(?::\s*"?([^"]*)"?)?$/);      // key | key: label
+    if (nm) { const k = nm[1].trim(); ensure(qual(k), (nm[2] || '').trim() || undefined); }
+  }
+  return { nodes: dropContainers([...nodes.values()]), edges, engine: 'mini' };
+}
+// annotations ride as # comments in the same d2 file (d2 ignores them, we scan them).
+function parseAnn(text) {
+  const ann = {}, annE = {}, diff = {}, src = {}, srcE = {}, tags = {};
+  for (const raw of text.split('\n')) {
+    const tr = raw.trim(); let m;
+    if (m = tr.match(/^#\s*@\s*(.+?)\s*:\s*(.+)$/)) {
+      const k = m[1].trim(), v = m[2].trim();
+      if (k.includes('->')) { const [a, b] = k.split('->').map(s => s.trim()); annE[a + '>>' + b] = v; } else ann[k] = v; continue;
+    }
+    if (m = tr.match(/^#\s*tag\s+(.+?)\s*:\s*(.+)$/i)) {
+      tags[m[1].trim()] = m[2].split(',').map(s => s.trim()).filter(Boolean); continue;
+    }
+    if (m = tr.match(/^#\s*diff\s+(add|del|mod)\s+(.+)$/i)) { diff[m[2].trim()] = m[1].toLowerCase(); continue; }
+    if (m = tr.match(/^#\s*src\s+(.+?)\s*=\s*(.+)$/i)) {
+      const k = m[1].trim(), v = m[2].trim();
+      if (k.includes('->')) { const [a, b] = k.split('->').map(s => s.trim()); srcE[a + '>>' + b] = v; } else src[k] = v; continue;
+    }
+  }
+  return { ann, annE, diff, src, srcE, tags };
+}
+
+// ── Tarjan SCC → cyclic node ids ─────────────────────────────────────────────
+function sccCyclic(nodes, edges) {
+  const adj = new Map(nodes.map(n => [n.id, []]));
+  for (const e of edges) (adj.get(e.source) || []).push(e.target);
+  let idx = 0; const stack = [], on = new Set(), I = new Map(), L = new Map(), cyc = new Set();
+  const strong = v => {
+    I.set(v, idx); L.set(v, idx); idx++; stack.push(v); on.add(v);
+    for (const w of adj.get(v) || []) {
+      if (!I.has(w)) { strong(w); L.set(v, Math.min(L.get(v), L.get(w))); }
+      else if (on.has(w)) L.set(v, Math.min(L.get(v), I.get(w)));
+    }
+    if (L.get(v) === I.get(v)) {
+      const comp = []; let w;
+      do { w = stack.pop(); on.delete(w); comp.push(w); } while (w !== v);
+      if (comp.length > 1) comp.forEach(x => cyc.add(x));
+    }
+  };
+  for (const n of nodes) if (!I.has(n.id)) strong(n.id);
+  for (const e of edges) if (e.source === e.target) cyc.add(e.source);
+  return cyc;
+}
+
+// ── cytoscape ────────────────────────────────────────────────────────────────
+const cy = cytoscape({
+  container: $('cy'),
+  wheelSensitivity: 0.2,
+  style: [
+    { selector: 'node', style: {
+      'label': 'data(lbl)', 'font-size': 11, 'font-family': 'ui-monospace,Menlo,monospace',
+      'text-valign': 'center', 'color': '#1e293b', 'background-color': '#e0e7ff',
+      'border-width': 1.5, 'border-color': '#818cf8', 'shape': 'round-rectangle',
+      'width': 'label', 'height': 22, 'padding': '6px', 'text-margin-y': 0 } },
+    { selector: 'node[?api]', style: {
+      'background-color': '#e0f2fe', 'border-color': '#0ea5e9', 'shape': 'round-tag', 'color': '#075985' } },
+    { selector: 'node.leaf', style: { 'background-color': '#f1f5f9', 'border-color': '#94a3b8' } },
+    { selector: 'edge', style: {
+      'width': 1.4, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1', 'label': 'data(lbl)',
+      'font-size': 9, 'color': '#94a3b8', 'text-rotation': 'autorotate',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
+    { selector: '.faded', style: { 'opacity': 0.12 } },
+    { selector: 'node.hl-focal', style: { 'border-width': 3.5, 'border-color': '#4338ca', 'background-color': '#c7d2fe' } },
+    { selector: 'edge.hl-in',  style: { 'line-color': '#16a34a', 'target-arrow-color': '#16a34a', 'width': 3 } },
+    { selector: 'edge.hl-out', style: { 'line-color': '#ea580c', 'target-arrow-color': '#ea580c', 'width': 3 } },
+    { selector: 'node.in-cycle', style: { 'border-color': '#dc2626', 'border-width': 3, 'border-style': 'double' } },
+    { selector: 'edge.in-cycle', style: { 'line-style': 'dashed', 'line-color': '#dc2626', 'target-arrow-color': '#dc2626' } },
+    { selector: '.iso-hide', style: { 'display': 'none' } },
+    { selector: 'node.diff-add', style: { 'border-color': '#16a34a', 'background-color': '#bbf7d0' } },
+    { selector: 'node.diff-del', style: { 'border-color': '#dc2626', 'background-color': '#fecaca', 'border-style': 'dashed' } },
+    { selector: 'node.diff-mod', style: { 'border-color': '#d97706', 'background-color': '#fde68a' } },
+    { selector: 'node[?ann]', style: { 'border-width': 2 } },
+    { selector: 'edge.diff-add', style: { 'line-color': '#16a34a', 'target-arrow-color': '#16a34a' } },
+    { selector: 'edge.diff-del', style: { 'line-color': '#dc2626', 'target-arrow-color': '#dc2626', 'line-style': 'dashed' } },
+    { selector: 'edge[?ann]', style: { 'line-style': 'dotted', 'width': 2 } },
+  ],
+});
+
+let CYC = new Set();
+let ANN = {}, ANNE = {}, SRC = {}, SRCE = {}, TAGS = {}, LAST_NODES = [];
+async function build(text) {
+  let g;
+  try { g = await d2ToGraph(text); } catch (e) { g = miniParseD2(text); g.note = e.message; }
+  const { ann, annE, diff, src, srcE, tags } = parseAnn(text);
+  ANN = ann; ANNE = annE; SRC = src; SRCE = srcE; TAGS = tags; LAST_NODES = g.nodes;
+  const ids = new Set(g.nodes.map(n => n.id));
+  CYC = sccCyclic(g.nodes, g.edges);
+  cy.elements().remove();
+  cy.add(g.nodes.map(n => ({ group: 'nodes', data: { ...n, lbl: n.name, ann: ann[n.id] || undefined, src: src[n.id] || undefined } })));
+  const ek = e => e.source + '>>' + e.target;
+  cy.add(g.edges.filter(e => ids.has(e.source) && ids.has(e.target))
+    .map(e => ({ group: 'edges', data: { ...e, lbl: e.label || '', ann: annE[ek(e)] || undefined, src: srcE[ek(e)] || undefined } })));
+  cy.nodes().forEach(n => { if (n.outdegree(false) === 0) n.addClass('leaf'); });
+  for (const [k, kind] of Object.entries(diff)) {
+    if (k.includes('->')) { const [a, b] = k.split('->').map(s => s.trim());
+      cy.edges().filter(e => e.source().id() === a && e.target().id() === b).addClass('diff-' + kind); }
+    else cy.$id(k).addClass('diff-' + kind);
+  }
+  cy.layout(layoutOpts()).run();
+  applyCyc();
+  buildTree(g.nodes);
+  $('stat').textContent =
+    `${g.nodes.length} nodes · ${g.edges.length} edges · ${CYC.size} in cycles · ${Object.keys(diff).length} diffs · ${g.engine}${g.note ? ' (' + g.note + ')' : ''}`;
+}
+
+function layoutOpts() {
+  return { name: 'dagre', rankDir: $('rankdir').value, ranker: $('ranker').value,
+    nodeSep: 18, rankSep: 46, edgeSep: 8, animate: true, animationDuration: 300 };
+}
+function relayout() { cy.layout(layoutOpts()).run(); }
+
+function sccComp() {
+  const ids = cy.nodes().map(n => n.id());
+  const adj = new Map(ids.map(i => [i, []]));
+  cy.edges().forEach(e => adj.get(e.source().id())?.push(e.target().id()));
+  let idx = 0, cid = 0; const stk = [], on = new Set(), I = new Map(), L = new Map(), comp = new Map();
+  const strong = v => {
+    I.set(v, idx); L.set(v, idx); idx++; stk.push(v); on.add(v);
+    for (const w of adj.get(v) || []) {
+      if (!I.has(w)) { strong(w); L.set(v, Math.min(L.get(v), L.get(w))); }
+      else if (on.has(w)) L.set(v, Math.min(L.get(v), I.get(w)));
+    }
+    if (L.get(v) === I.get(v)) { let w; do { w = stk.pop(); on.delete(w); comp.set(w, cid); } while (w !== v); cid++; }
+  };
+  for (const v of ids) if (!I.has(v)) strong(v);
+  return comp;
+}
+function layoutTopo() {
+  const comp = sccComp();
+  const cids = [...new Set(comp.values())];
+  const adj = new Map(cids.map(c => [c, new Set()])), ind = new Map(cids.map(c => [c, 0]));
+  cy.edges().forEach(e => {
+    const a = comp.get(e.source().id()), b = comp.get(e.target().id());
+    if (a !== b && !adj.get(a).has(b)) { adj.get(a).add(b); ind.set(b, ind.get(b) + 1); }
+  });
+  const tier = new Map(cids.map(c => [c, 0])), left = new Map(ind), q = cids.filter(c => ind.get(c) === 0);
+  while (q.length) { const c = q.shift();
+    for (const d of adj.get(c)) { tier.set(d, Math.max(tier.get(d), tier.get(c) + 1));
+      left.set(d, left.get(d) - 1); if (left.get(d) === 0) q.push(d); } }
+  const rows = new Map();
+  cy.nodes().forEach(n => { const t = tier.get(comp.get(n.id())); (rows.get(t) || rows.set(t, []).get(t)).push(n); });
+  const dir = $('rankdir').value, horiz = dir === 'LR' || dir === 'RL';
+  const dx = 175, dy = 92, pos = {};
+  for (const [t, ns] of rows) ns.forEach((n, i) => { pos[n.id()] = horiz ? { x: t * dx, y: i * dy } : { x: i * dx, y: t * dy }; });
+  cy.layout({ name: 'preset', positions: pos, fit: true, padding: 40, animate: true, animationDuration: 300 }).run();
+  $('stat').textContent += ` · ${rows.size} tiers`;
+}
+
+function applyCyc() {
+  const on = $('cyc').checked;
+  cy.elements().removeClass('in-cycle');
+  if (!on) return;
+  cy.nodes().forEach(n => { if (CYC.has(n.id())) n.addClass('in-cycle'); });
+  cy.edges().forEach(e => { if (CYC.has(e.source().id()) && CYC.has(e.target().id())) e.addClass('in-cycle'); });
+}
+
+// ── sidebar tree: same graph, re-expressed by the chosen axis ────────────────
+const srcDir = ref => ref ? (ref.replace(/:\d+\s*$/, '').split('/').slice(0, -1).join('/') || '/') : null;
+function buckets(n) {                       // a node can land in several buckets (tags)
+  const axis = $('groupby').value;
+  if (axis === 'source') return [srcDir(SRC[n.id]) || '(no source)'];
+  if (axis === 'tag') return TAGS[n.id]?.length ? TAGS[n.id] : ['(untagged)'];
+  if (axis === 'kind') return [n.api ? 'api' : CYC.has(n.id) ? 'cycle' : '(node)'];
+  return [n.mod];                            // container (default)
+}
+function buildTree(nodes) {
+  const tree = $('tree'); tree.innerHTML = '';
+  const byMod = new Map();
+  for (const n of nodes) for (const b of buckets(n)) { if (!byMod.has(b)) byMod.set(b, []); byMod.get(b).push(n); }
+  for (const [mod, list] of [...byMod].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const box = document.createElement('div');
+    box.className = 'mod' + (mod === 'api' ? ' api' : '');
+    const head = document.createElement('div');
+    head.className = 'mhead';
+    head.innerHTML = `<span class="tw">▾</span> ${mod} <span class="badge">(${list.length})</span>`;
+    const body = document.createElement('div');
+    head.onclick = () => { const h = body.hidden = !body.hidden; head.querySelector('.tw').textContent = h ? '▸' : '▾'; };
+    box.append(head, body);
+    for (const n of list.sort((a, b) => a.name.localeCompare(b.name))) {
+      const row = document.createElement('div');
+      row.className = 'row' + (n.api ? ' api' : '') + (CYC.has(n.id) ? ' cyc' : '');
+      row.dataset.id = n.id;
+      const a = ANN[n.id], sref = SRC[n.id];
+      row.innerHTML = `<span class="dot"></span>${n.name}` + (a ? `<span class="ann">✱</span>` : '') +
+        (sref ? `<a class="src" href="${srcHref(sref)}" title="${sref}">${shortRef(sref)}</a>` : '');
+      if (a) row.title = a;
+      const lk = row.querySelector('.src'); if (lk) lk.onclick = e => e.stopPropagation();
+      row.onmouseenter = () => focusNode(cy.$id(n.id));
+      row.onmouseleave = () => { if (!STICKY) clearFocus(); };
+      row.onclick = () => { if (STICKY) { focusNode(cy.$id(n.id)); syncURL({ sel: n.id, tour: null, step: null }); } else center(cy.$id(n.id)); };
+      body.append(row);
+    }
+    tree.append(box);
+  }
+}
+const rowFor = id => document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+
+// ── focus / cone modes ───────────────────────────────────────────────────────
+let CUR = null, STICKY = true;
+const SUP = { '-': '⁻', '+': '⁺', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+const supN = n => [...((n > 0 ? '+' : '') + n)].map(c => SUP[c] || c).join('');
+function labelDistances(node, keep) {
+  cy.nodes().forEach(x => x.data('lbl', x.data('name')));
+  const dist = { [node.id()]: 0 };
+  let fr = [node], d = 0, seen = new Set([node.id()]);
+  while (fr.length) { const nx = []; fr.forEach(n => n.outgoers('node').forEach(m => {
+    if (!seen.has(m.id())) { seen.add(m.id()); dist[m.id()] = d + 1; nx.push(m); } })); fr = nx; d++; }
+  let f2 = [node], u = 0, s2 = new Set([node.id()]);
+  while (f2.length) { const nx = []; f2.forEach(n => n.incomers('node').forEach(m => {
+    if (!s2.has(m.id())) { s2.add(m.id()); if (dist[m.id()] === undefined) dist[m.id()] = -(u + 1); nx.push(m); } })); f2 = nx; u++; }
+  keep.nodes().forEach(n => { const dd = dist[n.id()]; if (dd) n.data('lbl', n.data('name') + ' ' + supN(dd)); });
+}
+const srcHref = ref => 'vscode://file/' + ref.replace(/^\/+/, '');
+const shortRef = ref => ref.split('/').pop();
+function focusNode(node) {
+  if (!node || node.empty()) return;
+  CUR = node;
+  const mode = $('mode').value;
+  const succ = node.successors(), pred = node.predecessors();
+  let keep;
+  if (mode === 'neighbors') keep = node.closedNeighborhood();
+  else if (mode === 'downstream') keep = succ.union(node);
+  else if (mode === 'upstream') keep = pred.union(node);
+  else keep = succ.union(pred).union(node);
+  cy.elements().addClass('faded').removeClass('iso-hide');
+  keep.removeClass('faded');
+  node.removeClass('faded').addClass('hl-focal');
+  succ.edges().intersection(keep).removeClass('faded').addClass('hl-out');
+  pred.edges().intersection(keep).removeClass('faded').addClass('hl-in');
+  if ($('isolate').checked) cy.elements().difference(keep).addClass('iso-hide');
+  document.querySelectorAll('.row.rk,.row.foc').forEach(r => r.classList.remove('rk', 'foc'));
+  keep.nodes().forEach(n => { const r = rowFor(n.id()); if (r) r.classList.add('rk'); });
+  const r0 = rowFor(node.id()); if (r0) r0.classList.add('rk', 'foc');
+  labelDistances(node, keep);
+  drawLeaders(node, keep);
+  if (STICKY) cy.animate({ fit: { eles: keep, padding: 60 } }, { duration: 300 });  // auto-fit cone
+  showDetail(node);
+}
+// ── click-to-details: id, container, degree, tags, note, source, 1-hop neighbors
+function detailChip(label, id) { return `<span class="chip" data-go="${id}">${label}</span>`; }
+function showDetail(ele) {
+  const box = $('detail');
+  if (!ele || ele.empty()) { box.className = ''; box.innerHTML = ''; return; }
+  let html = '';
+  if (ele.isNode()) {
+    const id = ele.id(), n = ele.data();
+    const outs = ele.outgoers('node'), ins = ele.incomers('node');
+    html += `<h5>${n.name}</h5><div class="meta">id: ${id}</div>`;
+    html += `<div class="meta">container: ${n.mod} · in ${ins.length} · out ${outs.length}${CYC.has(id) ? ' · ◯ in cycle' : ''}</div>`;
+    if (TAGS[id]?.length) html += `<div class="meta">tags: ${TAGS[id].map(t => '#' + t).join(' ')}</div>`;
+    if (n.ann) html += `<div class="note">${n.ann}</div>`;
+    if (n.src) html += `<div class="meta">📄 <a href="${srcHref(n.src)}">${n.src}</a></div>`;
+    if (outs.length) html += `<div class="meta">→ depends on: ${outs.map(m => detailChip(m.data('name'), m.id())).join('')}</div>`;
+    if (ins.length) html += `<div class="meta">← used by: ${ins.map(m => detailChip(m.data('name'), m.id())).join('')}</div>`;
+  } else {
+    const s = ele.source(), t = ele.target(), d = ele.data();
+    html += `<h5>${s.data('name')} → ${t.data('name')}</h5>`;
+    if (d.lbl) html += `<div class="meta">label: ${d.lbl}</div>`;
+    if (d.ann) html += `<div class="note">${d.ann}</div>`;
+    if (d.src) html += `<div class="meta">📄 <a href="${srcHref(d.src)}">${d.src}</a></div>`;
+    html += `<div class="meta">${detailChip(s.data('name'), s.id())} ${detailChip(t.data('name'), t.id())}</div>`;
+  }
+  box.innerHTML = html; box.className = 'on';
+  box.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    const n = cy.$id(c.dataset.go); if (n.nonempty()) { focusNode(n); syncURL({ sel: n.id(), tour: null, step: null }); }
+  });
+}
+function clearFocus() {
+  CUR = null;
+  cy.elements().removeClass('faded hl-in hl-out hl-focal iso-hide');
+  cy.nodes().forEach(n => n.data('lbl', n.data('name')));
+  document.querySelectorAll('.row.rk,.row.foc').forEach(r => r.classList.remove('rk', 'foc'));
+  $('leader').innerHTML = '';
+  showDetail(null);
+}
+
+// ── guided tour ──────────────────────────────────────────────────────────────
+let TOUR = [], TI = -1, CURTOUR = null;
+function renderTourList() {
+  const box = $('tourlist'); box.innerHTML = '';
+  TOUR.forEach((s, i) => {
+    const d = document.createElement('div');
+    d.className = 'tstep' + (i === TI ? ' on' : '');
+    const what = s.path ? s.path.join(' → ') : s.focus;
+    d.innerHTML = `<span class="n">${i + 1}.</span> ${what}`;
+    d.onclick = () => tourGo(i);
+    box.append(d);
+  });
+}
+function walkPath(ids) {
+  const nodes = cy.collection(ids.map(id => cy.$id(id)).filter(n => n.nonempty()));
+  const edges = cy.edges().filter(e => {
+    const s = e.source().id(), t = e.target().id();
+    for (let i = 0; i < ids.length - 1; i++)
+      if ((s === ids[i] && t === ids[i + 1]) || (s === ids[i + 1] && t === ids[i])) return true;
+    return false;
+  });
+  const keep = nodes.union(edges);
+  cy.elements().addClass('faded').removeClass('hl-in hl-out hl-focal iso-hide');
+  keep.removeClass('faded');
+  edges.addClass('hl-out');
+  nodes.addClass('hl-focal');
+  if ($('isolate').checked) cy.elements().difference(keep).addClass('iso-hide');
+  CUR = nodes.last();
+  cy.animate({ fit: { eles: keep, padding: 70 } }, { duration: 300 });
+}
+function showNote(text, i) {
+  const n = $('tournote');
+  n.hidden = false;
+  n.innerHTML = `<span class="nav"><b id="tprev">◀</b> ${i + 1}/${TOUR.length} <b id="tnext">▶</b></span>` +
+                `<span class="step">${i + 1}</span>${text || ''}`;
+  n.querySelector('#tprev').onclick = () => tourGo(TI - 1);
+  n.querySelector('#tnext').onclick = () => tourGo(TI + 1);
+}
+function tourGo(i) {
+  if (!TOUR.length) return;
+  TI = (i + TOUR.length) % TOUR.length;
+  const s = TOUR[TI];
+  if (s.isolate !== undefined) $('isolate').checked = !!s.isolate;
+  STICKY = true; $('sticky').checked = true;
+  if (s.path && s.path.length) walkPath(s.path);
+  else if (s.focus) { focusNode(cy.$id(s.focus)); }
+  showNote(s.note, TI);
+  renderTourList();
+  syncURL({ tour: CURTOUR, step: TI, sel: null });
+}
+
+// ── dotted leader curves: node → its sidebar row ─────────────────────────────
+function drawLeaders(node, keep) {
+  const svg = $('leader'); svg.innerHTML = '';
+  const box = $('cy').getBoundingClientRect();
+  const off = id => { const rp = cy.$id(id).renderedPosition(); return { x: box.left + rp.x, y: box.top + rp.y }; };
+  const rowPt = id => { const r = rowFor(id); if (!r) return null; const rr = r.getBoundingClientRect();
+    return { x: rr.right - 4, y: rr.top + rr.height / 2 }; };
+  let paths = '';
+  keep.nodes().forEach(n => {
+    const id = n.id(), q = rowPt(id); if (!q) return;
+    const a = off(id), focal = id === node.id(), api = n.data('api');
+    const col = focal ? '#7c3aed' : api ? '#0ea5e9' : '#94a3b8';
+    const w = focal ? 1.8 : 1.2, op = focal ? 0.95 : api ? 0.8 : 0.35;
+    const mx = (a.x + q.x) / 2;
+    paths += `<path d="M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${q.y}, ${q.x} ${q.y}" fill="none"
+      stroke="${col}" stroke-width="${w}" stroke-dasharray="3 3" opacity="${op}"/>
+      <circle cx="${q.x}" cy="${q.y}" r="${focal ? 3.2 : 2.4}" fill="${col}" opacity="${op}"/>`;
+  });
+  svg.innerHTML = paths;
+}
+
+// ── wiring ───────────────────────────────────────────────────────────────────
+const center = n => { if (n && !n.empty()) cy.animate({ center: { eles: n }, zoom: Math.max(cy.zoom(), 1) }, { duration: 250 }); };
+cy.on('mouseover', 'node', e => { if (!STICKY) focusNode(e.target); });
+cy.on('mouseout', 'node', () => { if (!STICKY) clearFocus(); });
+cy.on('tap', 'node', e => { if (STICKY) { focusNode(e.target); syncURL({ sel: e.target.id(), tour: null, step: null }); } else center(e.target); });
+cy.on('tap', e => { if (e.target === cy && STICKY) { clearFocus(); syncURL({ sel: null }); } });
+cy.on('pan zoom render', () => { if (CUR) drawLeaders(CUR, currentKeep()); });
+
+const tip = $('tip');
+cy.on('mouseover', 'node,edge', e => {
+  const a = e.target.data('ann'), s = e.target.data('src');
+  const t = [a, s ? '📄 ' + s + (e.target.isEdge() ? '  (click edge to open)' : '') : ''].filter(Boolean).join('\n');
+  if (t) { tip.textContent = t; tip.style.display = 'block'; }
+});
+cy.on('mousemove', e => { if (tip.style.display === 'block' && e.originalEvent) {
+  tip.style.left = (e.originalEvent.clientX + 12) + 'px'; tip.style.top = (e.originalEvent.clientY + 12) + 'px'; } });
+cy.on('mouseout', 'node,edge', () => { tip.style.display = 'none'; });
+cy.on('tap', 'edge', e => { showDetail(e.target); });
+function currentKeep() {
+  if (!CUR) return cy.collection();
+  const mode = $('mode').value;
+  if (mode === 'neighbors') return CUR.closedNeighborhood();
+  if (mode === 'downstream') return CUR.successors().union(CUR);
+  if (mode === 'upstream') return CUR.predecessors().union(CUR);
+  return CUR.successors().union(CUR.predecessors()).union(CUR);
+}
+
+// ── URL = UI state only (cone / tiers / flags / current tour-step or selection)
+function urlSet(patch) {
+  const p = new URLSearchParams(location.search);
+  for (const k in patch) { const v = patch[k];
+    if (v == null || v === '' || v === false) p.delete(k); else p.set(k, v === true ? '1' : v); }
+  const qs = p.toString();
+  history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+}
+function syncURL(extra = {}) {
+  urlSet(Object.assign({
+    cone: $('mode').value === 'cone' ? null : $('mode').value,
+    rankdir: $('rankdir').value === 'TB' ? null : $('rankdir').value,
+    ranker: $('ranker').value === 'network-simplex' ? null : $('ranker').value,
+    iso: $('isolate').checked ? '1' : null,
+    sticky: STICKY ? null : '0',
+    cyc: $('cyc').checked ? '1' : null,
+    dark: DARK ? '1' : null,
+  }, extra));
+}
+function applyURL() {
+  const p = new URLSearchParams(location.search);
+  if (p.has('cone')) $('mode').value = p.get('cone');
+  if (p.has('rankdir')) { $('rankdir').value = p.get('rankdir'); }
+  if (p.has('ranker')) { $('ranker').value = p.get('ranker'); }
+  $('isolate').checked = p.get('iso') === '1';
+  if (p.has('sticky')) { STICKY = p.get('sticky') !== '0'; $('sticky').checked = STICKY; }
+  if (p.get('cyc') === '1') { $('cyc').checked = true; applyCyc(); }
+  if (p.get('dark') === '1') setTheme(true);
+  if (p.has('rankdir') || p.has('ranker')) relayout();
+  if (p.has('tour') && TOURS[p.get('tour')]) { selectTour(p.get('tour')); tourGo(p.has('step') ? +p.get('step') : 0); }
+  else if (p.has('sel')) { const n = cy.$id(p.get('sel')); if (n.nonempty()) { focusNode(n); center(n); } }
+}
+
+$('mode').onchange = () => { if (CUR) focusNode(CUR); syncURL(); };
+$('cyc').onchange = () => { applyCyc(); syncURL(); };
+$('sticky').onchange = e => { STICKY = e.target.checked; if (!STICKY) clearFocus(); syncURL(); };
+$('isolate').onchange = () => { if (CUR) focusNode(CUR); syncURL(); };
+$('rankdir').onchange = () => { relayout(); syncURL(); };
+$('ranker').onchange = () => { relayout(); syncURL(); };
+$('groupby').onchange = () => buildTree(LAST_NODES);
+$('relayout').onclick = relayout;
+$('topo').onclick = layoutTopo;
+$('fit').onclick = () => cy.fit(40);
+$('share').onclick = async () => { try { await navigator.clipboard.writeText(location.href); $('share').textContent = '✓ copied'; setTimeout(() => $('share').textContent = '⧉ copy link', 1200); } catch (e) { prompt('copy link:', location.href); } };
+
+function populateTours() {
+  const sel = $('tourpick'); sel.innerHTML = '';
+  for (const name of Object.keys(TOURS)) { const o = document.createElement('option'); o.value = o.textContent = name; sel.append(o); }
+  selectTour(Object.keys(TOURS)[0]);
+}
+function selectTour(name) {
+  CURTOUR = name;
+  $('tourpick').value = name;
+  $('tour').value = JSON.stringify(TOURS[name], null, 1);
+  TOUR = TOURS[name]; TI = -1; renderTourList();
+}
+$('tourpick').onchange = e => selectTour(e.target.value);
+$('loadtour').onclick = () => {
+  const name = $('tourpick').value;
+  try { TOURS[name] = JSON.parse($('tour').value); } catch (e) { return alert('bad tour JSON: ' + e.message); }
+  selectTour(name);
+};
+$('prev').onclick = () => tourGo(TI - 1);
+$('next').onclick = () => tourGo(TI + 1);
+
+let DARK = false;
+function setTheme(d) {
+  DARK = d; document.body.classList.toggle('dark', d);
+  $('cy').style.background = d ? '#0f172a' : '#fff';
+  $('theme').textContent = d ? '◑ light' : '◐ dark';
+  if (CUR) drawLeaders(CUR, currentKeep());
+  syncURL();
+}
+$('theme').onclick = () => setTheme(!DARK);
+$('apply').onclick = () => build($('src').value);
+$('sample').onclick = () => { $('src').value = SAMPLE; build(SAMPLE); };
+
+// ── content loader: ?src=<topic> injects <topic>.atlas.js (sets window.ATLAS).
+//    The template is frozen; all authored content lives in that one data file.
+function populateTopics() {
+  const sel = $('topic'), list = window.ATLASES || [];
+  const cur = new URLSearchParams(location.search).get('src') || '';
+  sel.innerHTML = '';
+  const def = document.createElement('option'); def.value = ''; def.textContent = '(demo)'; sel.append(def);
+  for (const t of list) { const o = document.createElement('option'); o.value = o.textContent = t; sel.append(o); }
+  sel.value = cur;
+  sel.onchange = () => {
+    const p = new URLSearchParams(location.search);
+    ['sel', 'tour', 'step'].forEach(k => p.delete(k));     // a different graph: drop stale selection
+    if (sel.value) p.set('src', sel.value); else p.delete('src');
+    location.search = p.toString();                         // reload with the new topic
+  };
+}
+async function applyAtlas(A) {
+  const d2 = (A && A.d2) || SAMPLE;
+  if (A && A.tours) { for (const k of Object.keys(TOURS)) delete TOURS[k]; Object.assign(TOURS, A.tours); }
+  $('src').value = d2;
+  await build(d2);
+  populateTours();
+  applyURL();
+}
+async function loadContent() {
+  const name = new URLSearchParams(location.search).get('src');
+  if (name && !/[^\w.\-]/.test(name)) {
+    await new Promise(res => {
+      const s = document.createElement('script');
+      s.src = 'atlases/' + name + '.atlas.js'; s.onload = res; s.onerror = () => { console.warn('no ' + s.src); res(); };
+      document.head.append(s);
+    });
+  }
+  populateTopics();
+  await applyAtlas(window.ATLAS);
+}
+// embedded as a web component: parent posts {type:'atlas', data:{d2,tours}} to push content
+window.addEventListener('message', async e => {
+  const m = e.data; if (m && m.type === 'atlas' && m.data) await applyAtlas(m.data);
+});
+await loadContent();
+if (window.parent !== window) window.parent.postMessage({ type: 'atlas-ready' }, '*');
+</script>
+</body>
+</html>

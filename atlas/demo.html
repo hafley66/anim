@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>graph-atlas web component demo</title>
+<style>
+  body { margin:0; font:14px system-ui; }
+  h2 { margin:12px; }
+  .frame { height:70vh; border:1px solid #ddd; margin:0 12px 24px; }
+</style>
+<script type="module" src="graph-atlas.js"></script>
+</head>
+<body>
+
+<h2>1 · file-backed (src + deep-linked tour step)</h2>
+<div class="frame">
+  <graph-atlas src="networking" params="tour=vxlan%20overlay%20encap&step=1&dark=1"></graph-atlas>
+</div>
+
+<h2>2 · inline data (no file, pushed via .data)</h2>
+<div class="frame">
+  <graph-atlas id="inline"></graph-atlas>
+</div>
+
+<script type="module">
+  document.getElementById('inline').data = {
+    d2: `svc: services {
+  web
+  api
+  worker
+}
+store: data {
+  db
+  cache
+  queue
+}
+svc.web -> svc.api
+svc.api -> store.db
+svc.api -> store.cache
+svc.worker -> store.queue
+svc.worker -> store.db
+store.queue -> svc.worker
+
+# @ svc.api : the only thing that touches the db directly
+# @ store.queue -> svc.worker : workers drain the queue (the cycle)
+# tag store.db : stateful
+# tag store.cache : ephemeral`,
+    tours: {
+      "request path": [
+        { focus: "svc.web", isolate: false, note: "A request lands on web." },
+        { path: ["svc.web", "svc.api", "store.db"], isolate: true, note: "web → api → db." },
+      ],
+    },
+  };
+</script>
+</body>
+</html>

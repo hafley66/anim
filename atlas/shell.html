@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>shell — core/ driving cytoscape + N resizable panels on one Bus</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px ui-monospace,Menlo,monospace; height:100vh; display:flex; flex-direction:column; color:#1e293b; }
+  #bar { display:flex; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid #ddd; background:#f1f5f9; }
+  #bar button { font:inherit; cursor:pointer; padding:3px 9px; border:1px solid #cbd5e1; border-radius:5px; background:#fff; }
+  #bar button:hover { background:#eef2ff; }
+  #note { color:#4338ca; }
+  #main { flex:1; display:flex; min-height:0; }
+  #graph { min-width:0; overflow:hidden; }
+  #cy { width:100%; height:100%; }
+  #side { display:flex; flex-direction:column; min-width:0; background:#fafafa; }
+  /* split.js gutters */
+  .gutter { background:#e2e8f0; background-repeat:no-repeat; background-position:50%; }
+  .gutter:hover { background:#c7d2fe; }
+  .gutter.gutter-horizontal { cursor:col-resize; width:6px; }
+  .gutter.gutter-vertical { cursor:row-resize; height:6px; }
+  /* panels */
+  .panel { display:flex; flex-direction:column; min-height:0; overflow:hidden; border-bottom:1px solid #e2e8f0; }
+  .phead { display:flex; align-items:center; gap:6px; padding:6px 9px; cursor:pointer;
+           font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#475569;
+           background:#f1f5f9; border-bottom:1px solid #e2e8f0; user-select:none; }
+  .phead .caret { width:10px; color:#94a3b8; transition:transform .15s; }
+  .panel.collapsed .caret { transform:rotate(-90deg); }
+  .phead .count { margin-left:auto; color:#94a3b8; font-size:10px; }
+  .pbody { overflow:auto; flex:1; padding:5px; }
+  .panel.collapsed { flex:0 0 auto !important; }
+  .panel.collapsed .pbody { display:none; }
+  ul.rows { list-style:none; margin:0; padding:0; }
+  ul.rows li { padding:3px 7px; border-radius:5px; cursor:pointer; display:flex; gap:6px; align-items:baseline;
+               animation:rowin .26s ease; content-visibility:auto; contain-intrinsic-size:auto 24px; }
+  ul.rows li:hover { background:#eef2ff; }
+  ul.rows li.exit { animation:rowout .24s ease forwards; pointer-events:none; }
+  ul.rows li.hot { background:#fef9c3; }
+  .id { color:#7c3aed; }
+  .loc { color:#0ea5e9; font-size:11px; }
+  .muted { color:#94a3b8; padding:6px 7px; }
+  .dnote { color:#334155; padding:4px 7px 8px; line-height:1.4; }
+  .dgroup { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; padding:6px 7px 2px; }
+  @keyframes rowin  { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:none; } }
+  @keyframes rowout { from { opacity:1; } to { opacity:0; transform:translateX(8px); height:0; padding:0; } }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="prev">◀</button><button id="next">▶ step</button>
+  <button id="reset">reset</button>
+  <span id="note">One Bus. Click a node or step the tour — every panel re-derives its slice. Kept nodes never recreate.</span>
+</div>
+<div id="main">
+  <div id="graph"><div id="cy"></div></div>
+  <div id="side"></div>
+</div>
+
+<script type="module">
+import { buildModel } from './core/d2.js';
+import { scc } from './core/tarjan.js';
+import { buildAdj, cone, pathFrontier, reachableRefs } from './core/views.js';
+import { transitionViews, transitionRefs } from './core/transition.js';
+import { Bus, SELECT, VIEW } from './core/bus.js';
+
+cytoscape.use(window.cytoscapeDagre);
+const $ = id => document.getElementById(id);
+const DIM = 0.1, DUR = 380;
+
+const D2TEXT = `net: L3 {
+  ip
+  route
+  nexthop
+}
+overlay: VXLAN {
+  vxlan
+  vtep
+}
+link: L2 {
+  ethernet
+  mac
+}
+net.ip -> net.route
+net.route -> net.nexthop
+net.nexthop -> net.route
+net.nexthop -> link.ethernet
+overlay.vxlan -> overlay.vtep
+overlay.vxlan -> link.ethernet
+overlay.vtep -> net.ip
+link.ethernet -> link.mac
+
+# @ net.route : RIB lookup, longest-prefix match
+# @ net.nexthop : recursive resolution (the SCC)
+# src net.route = frr/zebra/zebra_rib.c:120
+# src net.nexthop = frr/zebra/zebra_nhg.c:88
+# src overlay.vxlan = linux/drivers/net/vxlan/vxlan_core.c:2800
+# src link.ethernet = linux/net/ethernet/eth.c:40
+# ref sql net.route = routes:dest=10.0.0.0/8
+# ref sql net.ip = addrs:ifindex=2
+# ref sql overlay.vtep = vteps:vni=4097
+# ref api net.nexthop = GET /v1/nexthops/{id}
+# ref api overlay.vxlan = POST /v1/overlays
+# ref api link.ethernet = GET /v1/links/{ifindex}`;
+
+const TOUR = [
+  { focus: 'overlay.vxlan', note: 'VXLAN cone: what the overlay rides on.' },
+  { path: ['overlay.vxlan', 'overlay.vtep', 'net.ip', 'net.route'], note: 'Overlay → VTEP → IP → route. Every panel fills as refs come into view.' },
+  { path: ['net.route', 'net.nexthop'], note: 'The recursive nexthop step (the SCC).' },
+  { focus: 'link.ethernet', note: 'Where everything bottoms out at L2.' },
+];
+
+const model = await buildModel(D2TEXT);          // mini-parser (deterministic, no WASM)
+const adj = buildAdj(model);
+const { cyclic } = scc(model.entities, model.edges);
+const bus = new Bus();
+
+// ---- panel registry: add a panel = one entry. Each derives its own slice from the View. ----
+const PANELS = [
+  { key: 'fs',  title: 'fs · files reachable' },
+  { key: 'sql', title: 'sql · rows reachable' },
+  { key: 'api', title: 'api · endpoints reachable' },
+  { key: 'detail', title: 'detail · selected entity', special: 'detail' },
+];
+
+// build panel DOM into #side
+const panelEls = [];
+for (const p of PANELS) {
+  const el = document.createElement('div'); el.className = 'panel'; el.dataset.key = p.key;
+  el.innerHTML =
+    `<div class="phead"><span class="caret">▾</span><span>${p.title}</span><span class="count"></span></div>` +
+    `<div class="pbody">${p.special === 'detail' ? '<div class="muted">click a node</div>' : '<ul class="rows"></ul>'}</div>`;
+  el.querySelector('.phead').onclick = () => toggleCollapse(p.key);
+  $('side').append(el);
+  panelEls.push(el);
+  p.el = el; p.prev = [];
+}
+
+// ---- split.js: graph | side, then the side panels vertically ----
+Split(['#graph', '#side'], { sizes: [64, 36], minSize: [320, 240], gutterSize: 6, snapOffset: 0 });
+const sideSplit = Split(panelEls, {
+  direction: 'vertical', sizes: [34, 22, 22, 22], minSize: 30, gutterSize: 6, snapOffset: 0,
+});
+const collapsed = new Set();
+function toggleCollapse(key) {
+  const i = PANELS.findIndex(p => p.key === key), el = PANELS[i].el;
+  if (collapsed.has(key)) { collapsed.delete(key); el.classList.remove('collapsed'); }
+  else { collapsed.add(key); el.classList.add('collapsed'); }
+  // give live panels equal share of what's left; collapsed ones shrink to header.
+  const live = PANELS.filter(p => !collapsed.has(p.key));
+  const share = (100 - collapsed.size * 5) / live.length;
+  sideSplit.setSizes(PANELS.map(p => collapsed.has(p.key) ? 5 : share));
+}
+
+// ---- cytoscape: add whole graph once, layout once -> kept nodes never move ----
+const cy = cytoscape({
+  container: $('cy'), wheelSensitivity: 0.2,
+  style: [
+    { selector: 'node', style: { 'label': 'data(label)', 'font-size': 11, 'font-family': 'ui-monospace,monospace',
+      'text-valign': 'center', 'color': '#1e293b', 'background-color': '#e0e7ff', 'border-width': 1.5,
+      'border-color': '#818cf8', 'shape': 'round-rectangle', 'width': 'label', 'height': 22, 'padding': '6px' } },
+    { selector: 'node.cyc', style: { 'border-color': '#dc2626', 'border-width': 2.5, 'border-style': 'double' } },
+    { selector: 'node.focal', style: { 'border-width': 3.5, 'border-color': '#4338ca', 'background-color': '#c7d2fe' } },
+    { selector: 'edge', style: { 'width': 1.4, 'line-color': '#cbd5e1', 'target-arrow-color': '#cbd5e1',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
+  ],
+});
+cy.add(model.entities.map(e => ({ group: 'nodes', data: { id: e.id, label: e.label } })));
+cy.add(model.edges.map(e => ({ group: 'edges', data: { id: e.id, source: e.source, target: e.target } })));
+cy.nodes().forEach(n => { if (cyclic.has(n.id())) n.addClass('cyc'); });
+cy.layout({ name: 'dagre', rankDir: 'TB', nodeSep: 18, rankSep: 50 }).run();
+const fade = (id, o) => cy.$id(id).animate({ style: { opacity: o } }, { duration: DUR });
+
+// ---- one applyView fans out to graph + every panel ----
+const allView = { entityIds: new Set(model.entities.map(e => e.id)), edgeIds: new Set(model.edges.map(e => e.id)) };
+let curView = null;
+
+function renderListPanel(p, view) {
+  const refs = reachableRefs(model, view, p.key);
+  const ul = p.el.querySelector('ul.rows');
+  transitionRefs(p.prev, refs, {
+    enter: r => {
+      const li = document.createElement('li'); li.dataset.key = r.panel + ':' + r.locator;
+      li.innerHTML = `<span class="id">${r.id}</span><span class="loc">${r.locator}</span>`;
+      li.onclick = () => bus.emit(SELECT, r.id);
+      ul.append(li);
+    },
+    exit: r => { const li = ul.querySelector(`li[data-key="${CSS.escape(r.panel + ':' + r.locator)}"]`);
+                 if (li) { li.classList.add('exit'); setTimeout(() => li.remove(), 260); } },
+  });
+  p.el.querySelector('.count').textContent = refs.length || '';
+  p.prev = refs;
+}
+
+function renderDetail(p, id) {
+  const ent = model.entities.find(e => e.id === id);
+  const body = p.el.querySelector('.pbody');
+  if (!ent) { body.innerHTML = '<div class="muted">click a node</div>'; return; }
+  const refs = model.refs.get(id) || [];
+  const byPanel = {};
+  for (const r of refs) (byPanel[r.panel] ||= []).push(r);
+  let html = `<div class="dnote"><span class="id">${ent.id}</span>${ent.note ? ' — ' + ent.note : ''}</div>`;
+  for (const [panel, rs] of Object.entries(byPanel)) {
+    html += `<div class="dgroup">${panel}</div><ul class="rows">`;
+    for (const r of rs) html += `<li><span class="loc">${r.locator}</span></li>`;
+    html += `</ul>`;
+  }
+  if (!refs.length) html += '<div class="muted">no refs on this entity</div>';
+  body.innerHTML = html;
+}
+
+function applyView(next, opts = {}) {
+  transitionViews(curView, next, {
+    enterNode: id => fade(id, 1), moveNode: id => fade(id, 1), exitNode: id => fade(id, DIM),
+    enterEdge: id => fade(id, 1), moveEdge: id => fade(id, 1), exitEdge: id => fade(id, DIM),
+  });
+  cy.nodes().removeClass('focal');
+  if (next.focus) cy.$id(next.focus).addClass('focal');
+  const vis = cy.nodes().filter(n => next.entityIds.has(n.id()));
+  if (vis.nonempty()) cy.animate({ fit: { eles: vis, padding: 70 } }, { duration: DUR });
+  for (const p of PANELS) if (!p.special) renderListPanel(p, next);
+  if (opts.select) hot(opts.select);
+  curView = next;
+  bus.emit(VIEW, next);
+}
+
+// light up rows across panels for a selected id
+function hot(id) {
+  document.querySelectorAll('ul.rows li.hot').forEach(li => li.classList.remove('hot'));
+  for (const r of model.refs.get(id) || [])
+    document.querySelectorAll(`li[data-key="${CSS.escape(r.panel + ':' + r.locator)}"]`).forEach(li => li.classList.add('hot'));
+}
+
+// ---- one Bus wires graph clicks, panel clicks, tour, detail panel ----
+const detailPanel = PANELS.find(p => p.special === 'detail');
+bus.on(SELECT, id => { if (cy.$id(id).nonempty()) { applyView(cone(model, id, 'cone', adj), { select: id }); renderDetail(detailPanel, id); } });
+cy.on('tap', 'node', e => bus.emit(SELECT, e.target.id()));
+cy.on('tap', e => { if (e.target === cy) applyView(allView); });
+
+let ti = -1;
+function step(d) {
+  ti = (ti + d + TOUR.length) % TOUR.length;
+  const s = TOUR[ti];
+  applyView(s.path ? pathFrontier(model, s.path) : cone(model, s.focus, 'cone', adj));
+  $('note').textContent = `${ti + 1}/${TOUR.length} · ${s.note}`;
+}
+$('next').onclick = () => step(1);
+$('prev').onclick = () => step(-1);
+$('reset').onclick = () => { ti = -1; applyView(allView); $('note').textContent = 'Full graph. Step the tour or click a node.'; };
+
+applyView(allView);
+</script>
+</body>
+</html>

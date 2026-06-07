@@ -78,3 +78,54 @@ A **frame** is a moment. A **panel** is a lens. **Stepping** is time.
 
 Run `npm run check` to lint a deck (broken links, missing files, empty frames) —
 it prints compiler-style errors. Now go write `02-yours.md`. See [[you write markdown, you get a deck]].
+
+## the graph goes interactive
+
+The same d2 grammar, but as an ` ```atlas ` block: the right panel becomes a
+**live cytoscape graph**. Click a node for its **cone** (what it reaches); the
+graph stays put and only fades the subset, so nothing flickers. The `# ref`
+comments stream each node's **fs / sql / api** addresses into the side panels as
+they come into view — one model, many lenses.
+
+```atlas netstack
+net: L3 {
+  ip
+  route
+  nexthop
+}
+overlay: VXLAN {
+  vxlan
+  vtep
+}
+link: L2 {
+  ethernet
+  mac
+}
+net.ip -> net.route
+net.route -> net.nexthop
+net.nexthop -> net.route
+net.nexthop -> link.ethernet
+overlay.vxlan -> overlay.vtep
+overlay.vxlan -> link.ethernet
+overlay.vtep -> net.ip
+link.ethernet -> link.mac
+
+# @ net.route : RIB lookup, longest-prefix match
+# @ net.nexthop : recursive resolution (the SCC)
+# src net.route = frr/zebra/zebra_rib.c:120
+# src net.nexthop = frr/zebra/zebra_nhg.c:88
+# src link.ethernet = linux/net/ethernet/eth.c:40
+# ref sql net.route = routes:dest=10.0.0.0/8
+# ref sql net.ip = addrs:ifindex=2
+# ref sql overlay.vtep = vteps:vni=4097
+# ref api net.nexthop = GET /v1/nexthops/{id}
+# ref api overlay.vxlan = POST /v1/overlays
+# tag net.nexthop : hub
+# tag link.mac : sink
+# diff add overlay.vtep
+# diff mod net.route
+# view focus=overlay.vxlan mode=downstream dir=LR
+```
+
+The `net.route → net.nexthop → net.route` loop tints itself, same Tarjan pass as
+the static graphs. This is the [atlas] renderer left-joined onto the deck.
