@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf8">
+<title>atlas via CDN</title>
+<style>html,body{margin:0;height:100%} atlas-graph{display:block;height:100vh}</style>
+
+<!-- the whole renderer (React + cytoscape + AtlasPanel), one file, from jsDelivr-over-GitHub.
+     pin a commit sha or tag instead of @main for an immutable URL. -->
+<script src="https://cdn.jsdelivr.net/gh/hafley66/anim@main/dist/atlas.js"></script>
+
+<atlas-graph>
+<script type="application/atlas">
+client -> api -> db
+api -> cache
+
+# @ api : request handler
+# src api = src/server/api.ts:42
+# ref sql api = users:id=?
+# ref api api = GET /v1/users/{id}
+# view focus=api mode=cone layout=dagre dir=LR
+</script>
+</atlas-graph>
