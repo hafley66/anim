@@ -37,12 +37,19 @@ export function miniParseD2(text) {
     const line = raw.replace(/#.*$/, '').trim();
     if (!line) continue;
     if (line === '}') { stack.pop(); continue; }
-    const em = line.match(/^(.+?)\s*->\s*(.+?)(?::\s*(.+))?$/);
-    if (em && !em[1].includes('{')) {
-      const a = qual(em[1].trim()), b = qual(em[2].trim());
-      ensure(a); ensure(b);
-      edges.push({ id: a + '>>' + b + '#' + (ei++), source: a, target: b, label: (em[3] || '').replace(/^["']|["']$/g, '') });
-      continue;
+    if (line.includes('->') && !line.includes('{')) {
+      // expand a chain a -> b -> c into a->b, b->c. A trailing ": label" (colon
+      // after the last node, not part of an arrow) applies to the final hop.
+      let body = line, label = '';
+      const ci = line.lastIndexOf(':');
+      if (ci > line.lastIndexOf('>')) { body = line.slice(0, ci).trim(); label = line.slice(ci + 1).trim().replace(/^["']|["']$/g, ''); }
+      const segs = body.split('->').map(s => qual(s.trim())).filter(Boolean);
+      if (segs.length >= 2) {
+        segs.forEach(s => ensure(s));
+        for (let i = 0; i < segs.length - 1; i++)
+          edges.push({ id: segs[i] + '>>' + segs[i + 1] + '#' + (ei++), source: segs[i], target: segs[i + 1], label: i === segs.length - 2 ? label : '' });
+        continue;
+      }
     }
     const cm = line.match(/^([\w.\-]+)\s*(?::\s*([^{]*?))?\s*\{$/);    // key { | key: label {
     if (cm) { const k = cm[1].trim(); ensure(qual(k), (cm[2] || '').replace(/^["']|["']$/g, '').trim() || undefined); stack.push(k); continue; }
