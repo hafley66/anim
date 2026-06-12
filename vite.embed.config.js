@@ -13,7 +13,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: false,
-    lib: { entry: 'src/embed.jsx', formats: ['iife'], name: 'AtlasEmbed', fileName: () => 'atlas.js' },
+    lib: { entry: 'src/embed.tsx', formats: ['iife'], name: 'AtlasEmbed', fileName: () => 'atlas.js' },
     rollupOptions: { output: { inlineDynamicImports: true } },   // fold the lazy elk chunk in -> one file
   },
 })

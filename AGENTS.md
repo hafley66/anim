@@ -102,7 +102,7 @@ net.route -> net.nexthop
   (mode = cone|neighbors|downstream|upstream; layout = dagre|elk|tree|rings|force|grid;
   dir = TB|LR|BT|RL). The reader hits **⤢ expand** to open the same picture full-screen
   with every knob (layout, direction, cone mode, isolate, tooltips), Esc to collapse.
-- Backed by `src/core/` (the shared model) + `src/AtlasPanel.jsx`. The static
+- Backed by `src/core/` (the shared model) + `src/AtlasPanel.tsx`. The static
   graph and the atlas are two renderers over one model; the node id is the join
   key. One frame uses one right panel: atlas OR graph OR fs OR git.
 

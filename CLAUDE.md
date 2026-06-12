@@ -9,7 +9,7 @@ cytoscape graph with derived side panels (fs/sql/api/...). To *author a deck*, r
 
 ```
 npm run dev          # vite dev server on http://localhost:5173/
-npm run typecheck    # tsgo --noEmit over src/core + e2e (core is TypeScript, strict)
+npm run typecheck    # tsgo --noEmit over ALL of src (renderers are .tsx) + e2e, strict
 npm test             # vitest: src/core/*.test.ts (atlas/core is a symlink — vitest.config.ts scopes the include)
 npm run test:e2e     # playwright e2e (e2e/atlas.spec.ts; auto-starts/reuses the dev server)
 npm run shoot:atlas  # playwright screenshots -> shots/atlas-*.png (dev server MUST be up)
@@ -23,20 +23,20 @@ every atlas change and read the PNG back before claiming done.
 
 ## Where things live
 
-- `src/AtlasPanel.jsx` — the interactive renderer, an ADAPTER over core: every
+- `src/AtlasPanel.tsx` — the interactive renderer, an ADAPTER over core: every
   view/selection/step is computed purely in core and applied through cytoscape
   hooks. select() takes a focus SET (shift/cmd-click grows it). `window.__atlas`
   is the e2e hook. Named tours (model `# tour` lines + legacy prop) get ▶ buttons;
   a span step opens CodeSpotlight over the graph. Two model sources: `d2` text
   (runtime compile) or `rows` (RelRows embedded by the build's `atlas-db` fence
   -> core modelFromRows; the browser never opens a database).
-- `src/CodeSpotlight.jsx` — the document surface for span tour steps: file stays
+- `src/CodeSpotlight.tsx` — the document surface for span tour steps: file stays
   resident, the band top/height CSS-transitions between ranges (the FLIP), scroll
   eases to center it. Geometry from core/spotlight.ts; its LINE_H (18px) must
   equal `.spotlight-pre` line-height. File text arrives via the `doc: <path>`
   deck directive (build-frames inlines it into f.docs; the path as written is
   the docs key and must match the tour target's file).
-- `src/Frames.jsx` — the deck shell (markdown via `marked`, left code panel, slide nav).
+- `src/Frames.tsx` — the deck shell (markdown via `marked`, left code panel, slide nav).
   Also hosts the **Periscope** dock (screen edge, fixed): hover an ident (prose
   `.natlas` span or a graph node) and AtlasPanel answers over the bus
   (`PERISCOPE` event) with the ident's fs refs (`identRefs` in core/views.ts);
@@ -51,7 +51,7 @@ every atlas change and read the PNG back before claiming done.
   - `tarjan.ts` scc + `topoTiers` · `layout.ts` tierCells/gridCell · `metrics.ts` betweenness heat
   - `views.ts` cone(focus[]) / fullView / detailFor / `reachableRefs` · `transition.ts` constancy primitive (WIRED: round player + FsTree)
   - `codec.ts` ?av= payload ('+'-joined focus sets) + parseTarget (tour_step target string -> Target)
-  - `spotlight.ts` span -> highlight band + scroll target (pure math behind CodeSpotlight.jsx)
+  - `spotlight.ts` span -> highlight band + scroll target (pure math behind CodeSpotlight.tsx)
   - `tree.ts` flat refs -> nestable tree + `explorerRows` (fs lens rows)
   - `panels.ts` how each panel kind segments a locator -> tree path
   - `bus.ts` event bus · `index.ts` barrel
