@@ -6,9 +6,10 @@
 //   card(id, body) · card_about(card, node) · view(id, focus, mode, layout)
 //   ref(node, panel, locator)
 
-import type { Edge, Entity, Model, Ref, Target, Tour, ViewSeed } from './model'
+import type { Edge, Entity, Model, Ref, Tour, ViewSeed } from './model'
 import { entity, lastSeg, makeModel, parentOf } from './model'
 import { decodeFocus } from './codec'
+import { toursFromRows } from './tour'
 
 export type NodeRow = { id: string; kind?: string; label?: string }
 export type EdgeRow = { id?: string; f: string; t: string; kind?: string; label?: string }
@@ -32,14 +33,8 @@ export type RelRows = {
   refs?: RefRowIn[]
 }
 
-// a tour_step's target string: 'file:lo..hi' is a span; otherwise '+'-joined
-// node ids form a (multi-)focus.
-export function parseTarget(s: string): Target {
-  const m = s.match(/^(.+):(\d+)\.\.(\d+)$/)
-  if (m) return { span: { file: m[1], lo: +m[2], hi: +m[3] } }
-  return { focus: decodeFocus(s) }
-}
-
+// the tour_step target encoding ('file:lo..hi' span / '+'-joined focus) is
+// parseTarget in codec.ts; row grouping is toursFromRows in tour.ts.
 export function modelFromRows(rows: RelRows): Model {
   const tagsOf = new Map<string, string[]>()
   for (const t of rows.tags || []) {
@@ -68,15 +63,7 @@ export function modelFromRows(rows: RelRows): Model {
     (refs.get(r.node) || refs.set(r.node, []).get(r.node)!).push({ panel: r.panel, locator: r.locator })
   }
 
-  const stepsOf = new Map<string, TourStepRow[]>()
-  for (const s of rows.tour_steps || []) {
-    (stepsOf.get(s.tour) || stepsOf.set(s.tour, []).get(s.tour)!).push(s)
-  }
-  const tours: Tour[] = (rows.tours || []).map(t => ({
-    id: t.id, ...(t.title ? { title: t.title } : {}),
-    steps: (stepsOf.get(t.id) || []).sort((a, b) => a.seq - b.seq)
-      .map(s => ({ target: parseTarget(s.target), ...(s.comment ? { comment: s.comment } : {}) })),
-  }))
+  const tours: Tour[] = toursFromRows(rows.tour_steps || [], rows.tours || [])
 
   const seeds: Record<string, ViewSeed> = {}
   for (const v of rows.views || []) {

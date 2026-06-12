@@ -26,6 +26,7 @@ import { Tree } from 'react-arborist'
 import { buildTree, toForest, nodeCount } from './core/tree'
 import { panelSpec, pathOfFor, panelKeysOf } from './core/panels'
 import { atlasBus, HOVER } from './atlas-bus.js'
+import CodeSpotlight from './CodeSpotlight.jsx'
 
 let dagreReg = false, elkReg = false
 const ensureLayouts = () => { if (!dagreReg) { cytoscape.use(dagre); cytoscape.use(expandCollapse); dagreReg = true } }
@@ -138,7 +139,7 @@ const DIRS = [['TB', '↓ TB'], ['LR', '→ LR'], ['BT', '↑ BT'], ['RL', '← 
 // toggle an id's membership in a focus set (shift/cmd-click)
 const toggleId = (ids, id) => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
 
-export default function AtlasPanel({ d2, tours = {} }) {
+export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
   const cyEl = useRef(null)
   const cyRef = useRef(null)
   const anchorRef = useRef(null)   // 1px element placed at the hovered node (the only JS)
@@ -154,8 +155,14 @@ export default function AtlasPanel({ d2, tours = {} }) {
   const [heat, setHeat] = useState(false)   // graphology betweenness coloring
   const [barMode, setBarMode] = useState('rows')  // 'off' | 'rows' (per-row slice) | 'stacked' (branch = one stacked bar of children)
   const [ui, setUi] = useState({ mode: 'cone', isolate: false, layoutName: 'dagre', rankDir: 'TB' })
+  const [spot, setSpot] = useState(null)         // active span step: { span, comment } | null
+  const [modelTours, setModelTours] = useState([])  // model.tours minus 'rounds' (# tour lines / rel rows)
   // legacy tours prop ({name: [{focus}|{path}]}) -> Tour at the boundary
   const namedTours = useMemo(() => Object.entries(tours || {}).map(([n, seq]) => tourFromSequence(n, seq)), [tours])
+  const allTours = useMemo(() => [...modelTours, ...namedTours], [modelTours, namedTours])
+  // mirrored in S.current so the once-bound window.__atlas closure stays fresh
+  const showSpot = v => { S.current.spot = v; setSpot(v) }
+  const stepTourRef = useRef(null)
 
   const setRefsFromView = ids => {
     const view = { entityIds: ids }, rbp = {}
@@ -331,6 +338,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
       })
       const adj = buildAdj(model)
       const roundTour = model.tours.find(t => t.id === 'rounds') || null
+      setModelTours(model.tours.filter(t => t.id !== 'rounds'))
       S.current = { ...S.current, model, adj, view: fullView(model), focus: [], noteOf, cy, roundTour }
       cyRef.current = cy
       S.current.ec = cy.expandCollapse({                                 // fold/unfold d2 containers
@@ -400,11 +408,13 @@ export default function AtlasPanel({ d2, tours = {} }) {
       // specs read/drive the panel through this (dev + prod, harmless).
       window.__atlas = {
         select, showAll, setStepTo,
+        tour: (name, dir = 1) => stepTourRef.current?.(name, dir),
         ids: () => S.current.model.entities.map(e => e.id),
         state: () => ({
           focus: [...S.current.focus],
           visible: S.current.view ? S.current.view.entityIds.size : null,
           round: S.current.step ?? null,
+          spot: S.current.spot ? S.current.spot.span : null,
         }),
       }
     })()
@@ -480,15 +490,23 @@ export default function AtlasPanel({ d2, tours = {} }) {
   }
 
   // named tours: each click advances; the step's target drives the selection.
+  // A span step leaves the graph untouched and opens the spotlight (the document
+  // surface) over it; the next non-span step closes it. Position lives in
+  // S.current.tourPos so the once-bound e2e hook is never stale.
   function stepTour(name, dir) {
-    const t = namedTours.find(x => x.id === name); if (!t || !t.steps.length) return
-    let s = (tour.name === name ? tour.step : -1) + dir
+    const t = allTours.find(x => x.id === name); if (!t || !t.steps.length) return
+    const pos = S.current.tourPos || { name: null, step: -1 }
+    let s = (pos.name === name ? pos.step : -1) + dir
     s = (s + t.steps.length) % t.steps.length
+    S.current.tourPos = { name, step: s }
     setTour({ name, step: s })
-    const target = t.steps[s].target
+    const step = t.steps[s], target = step.target
+    if (target.span) { showSpot({ span: target.span, comment: step.comment }); return }
+    showSpot(null)
     if (target.focus && target.focus.length) select(target.focus)
     else if (target.path) select([target.path[target.at ?? target.path.length - 1]])
   }
+  stepTourRef.current = stepTour
 
   const setMode = m => { S.current.mode = m; setUi(u => ({ ...u, mode: m })); if (S.current.focus.length) select(S.current.focus); syncURL() }
   const setIsolate = v => { S.current.isolate = v; setUi(u => ({ ...u, isolate: v })); if (S.current.focus.length) select(S.current.focus); syncURL() }
@@ -497,7 +515,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
   const toggleHeat = () => { const cy = cyRef.current; if (!cy) return; const on = !heat; setHeat(on); cy.nodes().forEach(n => { if (!n.data('grp')) n.toggleClass('heaton', on) }) }
   const fold = () => S.current.ec?.collapseAll()
   const unfold = () => S.current.ec?.expandAll()
-  const reset = () => { setTour({ name: null, step: -1 }); showAll() }
+  const reset = () => { S.current.tourPos = null; setTour({ name: null, step: -1 }); showSpot(null); showAll() }
   const toggle = k => setCollapsed(c => ({ ...c, [k]: !c[k] }))
 
   return (
@@ -506,6 +524,9 @@ export default function AtlasPanel({ d2, tours = {} }) {
         <div className="atlas-anchor" ref={anchorRef} />
         <div className="atlas-tip" ref={tipRef} />
         {stepUI && stepUI.cap && <div className="atlas-cap" dangerouslySetInnerHTML={{ __html: noteToHTML(stepUI.cap) }} />}
+        {spot && <CodeSpotlight docs={docs} span={spot.span}
+                                commentHTML={spot.comment ? noteToHTML(spot.comment) : ''}
+                                onClose={() => showSpot(null)} />}
       </div>
       <div className="atlas-side">
         <div className="atlas-bar">
@@ -533,7 +554,7 @@ export default function AtlasPanel({ d2, tours = {} }) {
             <option value="rows">bar: rows</option>
             <option value="stacked">bar: stacked</option>
           </select>
-          {namedTours.map(t => (
+          {allTours.map(t => (
             <button key={t.id} className="atlas-btn" onClick={() => stepTour(t.id, 1)}>
               ▶ {t.id}{tour.name === t.id ? ` ${tour.step + 1}/${t.steps.length}` : ''}
             </button>

@@ -26,17 +26,25 @@ every atlas change and read the PNG back before claiming done.
 - `src/AtlasPanel.jsx` — the interactive renderer, an ADAPTER over core: every
   view/selection/step is computed purely in core and applied through cytoscape
   hooks. select() takes a focus SET (shift/cmd-click grows it). `window.__atlas`
-  is the e2e hook.
+  is the e2e hook. Named tours (model `# tour` lines + legacy prop) get ▶ buttons;
+  a span step opens CodeSpotlight over the graph.
+- `src/CodeSpotlight.jsx` — the document surface for span tour steps: file stays
+  resident, the band top/height CSS-transitions between ranges (the FLIP), scroll
+  eases to center it. Geometry from core/spotlight.ts; its LINE_H (18px) must
+  equal `.spotlight-pre` line-height. File text arrives via the `doc: <path>`
+  deck directive (build-frames inlines it into f.docs; the path as written is
+  the docs key and must match the tour target's file).
 - `src/Frames.jsx` — the deck shell (markdown via `marked`, left code panel, slide nav).
 - `src/core/` — framework-neutral shared model, TypeScript (strict, checked by
   tsgo), imported by both the static build and the atlas:
   - `model.ts` Entity/Edge/View/Model + Target/Tour types (Target, NOT Subject — RxJS owns Subject)
-  - `annotations.ts` all `#` comment parsing (`# @ / tag / diff / ref / src / step / view`)
-  - `tour.ts` THE sequencing concept: tourFromSteps/tourFromSequence/tourView
+  - `annotations.ts` all `#` comment parsing (`# @ / tag / diff / ref / src / step / tour / view`)
+  - `tour.ts` THE sequencing concept: tourFromSteps/tourFromSequence/toursFromRows/tourView
   - `d2.ts` d2 text -> Model (attaches tours + seed) · `rows.ts` rel_* rows -> Model (sqlite loader, driver-agnostic)
   - `tarjan.ts` scc + `topoTiers` · `layout.ts` tierCells/gridCell · `metrics.ts` betweenness heat
   - `views.ts` cone(focus[]) / fullView / detailFor / `reachableRefs` · `transition.ts` constancy primitive (WIRED: round player + FsTree)
-  - `codec.ts` ?av= payload ('+'-joined focus sets)
+  - `codec.ts` ?av= payload ('+'-joined focus sets) + parseTarget (tour_step target string -> Target)
+  - `spotlight.ts` span -> highlight band + scroll target (pure math behind CodeSpotlight.jsx)
   - `tree.ts` flat refs -> nestable tree + `explorerRows` (fs lens rows)
   - `panels.ts` how each panel kind segments a locator -> tree path
   - `bus.ts` event bus · `index.ts` barrel

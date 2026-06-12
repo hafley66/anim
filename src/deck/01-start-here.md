@@ -129,3 +129,33 @@ l2.ethernet -> l2.mac
 
 The `net.route → net.nexthop → net.route` loop tints itself, same Tarjan pass as
 the static graphs. This is the [atlas] renderer left-joined onto the deck.
+
+## a tour spotlights code
+
+A `# tour` line per step — the target is a **focus set** (`a+b`) or a **span**
+(`file:lo..hi`), the same encoding as a `tour_step` row. Focus steps drive the
+graph; span steps open a **document surface** over it: the file stays resident,
+the highlight band FLIPs between ranges, the scroll eases to follow. `doc:`
+inlines the file at build time. Press ▶ spotlit to walk it.
+
+doc: src/core/codec.ts
+doc: src/core/spotlight.ts
+
+```atlas spotlit
+core: anim core {
+  codec
+  tour
+  spotlight
+}
+core.tour -> core.codec
+core.tour -> core.spotlight: span steps land here {style.stroke-dash: 3}
+
+# @ core.codec : parseTarget: one string codec for rel rows and `# tour` lines
+# @ core.spotlight : pure band + scroll math; the renderer owns DOM and easing
+# src core.codec = src/core/codec.ts:27
+# src core.spotlight = src/core/spotlight.ts:1
+# tour spotlight 0 = core.codec+core.spotlight : the two pure pieces behind the spotlight
+# tour spotlight 1 = src/core/codec.ts:23..31 : a target string is a span (`file:lo..hi`) or a '+'-joined focus set
+# tour spotlight 2 = src/core/spotlight.ts:10..21 : lines clamp, then become a pixel band
+# tour spotlight 3 = src/core/spotlight.ts:23..28 : the scroll target centers the band, clamped to the doc
+```

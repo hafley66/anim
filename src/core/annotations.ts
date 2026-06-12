@@ -3,6 +3,7 @@
 // the frame's pinned opening view. Pure text -> data; no model knowledge.
 
 import type { ViewSeed } from './model'
+import type { TourStepRow } from './rows'
 
 export type Steps = { stepOf: Map<string, number>; caps: Record<number, string>; max: number }
 
@@ -15,6 +16,7 @@ export type Annotations = {
   tags: Record<string, string[]>
   reflist: Array<{ panel: string; key: string; locator: string }>
   steps: Steps | null
+  tourSteps: TourStepRow[]
   viewSeed: ViewSeed | null
 }
 
@@ -27,6 +29,7 @@ export function parseAnnotations(text: string): Annotations {
   const tags: Record<string, string[]> = {}
   const reflist: Array<{ panel: string; key: string; locator: string }> = []
   const stepOf = new Map<string, number>(), caps: Record<number, string> = {}
+  const tourSteps: TourStepRow[] = []
   let max = -1
   let viewSeed: ViewSeed | null = null
   for (const raw of text.split('\n')) {
@@ -50,11 +53,16 @@ export function parseAnnotations(text: string): Annotations {
     // round player:  # step <id> = <n>   |   # step <n> : <caption>
     if ((m = tr.match(/^#\s*step\s+(\S+)\s*=\s*(\d+)\s*$/i))) { const n = +m[2]; stepOf.set(m[1].trim(), n); max = Math.max(max, n); continue }
     if ((m = tr.match(/^#\s*step\s+(\d+)\s*:\s*(.+)$/i))) { const n = +m[1]; caps[n] = m[2].trim(); max = Math.max(max, n); continue }
+    // named tour, one step per line (a tour_step row in text form; same target
+    // encoding as rel tour_step.target):  # tour <name> <seq> = <target> [: <comment>]
+    if ((m = tr.match(/^#\s*tour\s+(\S+)\s+(\d+)\s*=\s*(\S+)(?:\s+:\s*(.+))?$/i))) {
+      tourSteps.push({ tour: m[1].trim(), seq: +m[2], target: m[3].trim(), ...(m[4] ? { comment: m[4].trim() } : {}) }); continue
+    }
     // pinned opening view:  # view focus=a+b mode=cone layout=elk dir=LR iso
     if (/^#\s*view\b/i.test(tr) && !viewSeed) viewSeed = parseViewSeed(tr)
   }
   const steps: Steps | null = (stepOf.size || Object.keys(caps).length) ? { stepOf, caps, max } : null
-  return { ann, annE, diff, src, srcE, tags, reflist, steps, viewSeed }
+  return { ann, annE, diff, src, srcE, tags, reflist, steps, tourSteps, viewSeed }
 }
 
 // `# view focus=net.nexthop+net.route mode=cone layout=elk dir=LR iso`

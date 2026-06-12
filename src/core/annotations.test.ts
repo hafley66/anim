@@ -34,9 +34,21 @@ describe('parseAnnotations', () => {
     expect(a.steps!.max).toBe(1)
   })
 
+  it('parses named tour steps (span and focus targets, optional comment)', () => {
+    const a = parseAnnotations([
+      '# tour walk 0 = Engine+Db : the core pair',
+      '# tour walk 1 = src/engine.rs:42..80',
+    ].join('\n'))
+    expect(a.tourSteps).toEqual([
+      { tour: 'walk', seq: 0, target: 'Engine+Db', comment: 'the core pair' },
+      { tour: 'walk', seq: 1, target: 'src/engine.rs:42..80' },
+    ])
+  })
+
   it('returns null steps and viewSeed when absent', () => {
     const a = parseAnnotations('a -> b\n')
     expect(a.steps).toBeNull()
+    expect(a.tourSteps).toEqual([])
     expect(a.viewSeed).toBeNull()
   })
 

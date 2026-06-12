@@ -88,15 +88,21 @@ Lives in core/tour.ts + AtlasPanel applyView/setStepTo/select. Round player
 visibility routes through transitionViews; `.step-new` rings each round's
 reveal set; captions come from TourStep.comment.
 
-### 2. Code spotlight panel (target kind: span)
+### 2. Code spotlight panel (target kind: span) — DONE (2026-06-12)
 
 Multi-file code-surfer with constancy: file stays resident, highlight FLIPs
 between ranges, scroll eases. Coordinates come from the ref spine
-(`ref(id, ident, file, lo, hi)`). Target {span} + Panel.CODE + panels.ts
-locator segmentation already exist; tourView returns null for span steps so
-the renderer routes them to a document surface. Use cases: PR/AI-session
-explainer (AI emits span-anchored tour_step rows — claims are mechanically
-checkable, prose capped at comment).
+(`ref(id, ident, file, lo, hi)`). Landed as:
+- core/spotlight.ts: clampSpan/bandFor/scrollFor (pure band + scroll math; lo..hi
+  are 1-based inclusive lines)
+- parseTarget moved to codec.ts (one string codec for rel tour_step.target and
+  the `# tour` annotation); toursFromRows in tour.ts shared by rows.ts and d2.ts
+- `# tour <name> <seq> = <target> [: <comment>]` annotation -> named model tours
+- CodeSpotlight.jsx docked over .atlas-graph; AtlasPanel stepTour routes span
+  steps there (graph view untouched); `doc:` deck directive inlines file text
+  into f.docs at build time
+Use cases: PR/AI-session explainer (AI emits span-anchored tour_step rows —
+claims are mechanically checkable, prose capped at comment).
 
 ### 3. Periscope (hover -> refs-in-fs)
 

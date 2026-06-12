@@ -306,6 +306,38 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 }
 .atlas-graph .atlas-cap .ncode { background: #1e293b; color: #a5b4fc; border-color: #334155; }
 .atlas-graph .atlas-cap strong { color: #fff; }
+/* code spotlight: the document surface for span tour steps, docked over the
+   graph (which stays resident underneath). The band's top/height transition is
+   the FLIP between ranges; .spotlight-pre line-height MUST equal LINE_H (18px)
+   in CodeSpotlight.jsx — the band math assumes it. */
+.atlas-graph .spotlight {
+  position: absolute; inset: 12px; z-index: 8; display: flex; flex-direction: column;
+  background: var(--atlas-surface); border: 1px solid var(--atlas-panel-line);
+  border-radius: 10px; box-shadow: 0 10px 32px rgba(15,23,42,.22); overflow: hidden;
+}
+.spotlight-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border-bottom: 1px solid var(--atlas-panel-line); background: var(--atlas-panel-bg); }
+.spotlight-file { font: 600 11px ui-monospace, Menlo, monospace; color: #1e293b; }
+.spotlight-range { font: 11px ui-monospace, Menlo, monospace; color: var(--atlas-muted); }
+.spotlight-close { margin-left: auto; }
+.spotlight-scroll { flex: 1; overflow: auto; }
+.spotlight-doc { position: relative; min-width: 100%; width: max-content; }
+.spotlight-band { position: absolute; left: 0; right: 0; min-width: 100%;
+  background: #eef2ff; border-left: 3px solid var(--atlas-link);
+  transition: top .45s cubic-bezier(.2,.7,.2,1), height .45s cubic-bezier(.2,.7,.2,1); }
+.spotlight-pre { position: relative; margin: 0; padding: 0 10px 0 0;
+  font: 12px/18px ui-monospace, Menlo, monospace; color: #334155; }
+.spotlight-pre .sline { height: 18px; white-space: pre; }
+.spotlight-pre .sline.lit { color: #0f172a; }
+.spotlight-pre .sno { display: inline-block; width: 42px; padding-right: 12px; text-align: right;
+  color: var(--atlas-muted); user-select: none; }
+.spotlight-missing { padding: 14px; font-size: 12px; color: var(--atlas-muted); }
+.spotlight-missing code { background: var(--atlas-panel-bg); border: 1px solid var(--atlas-panel-line);
+  border-radius: 4px; padding: 1px 4px; }
+.spotlight-cap { padding: 8px 12px; border-top: 1px solid var(--atlas-panel-line);
+  background: #0f172a; color: #e8eef7; font: 12px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.spotlight-cap .ncode { background: #1e293b; color: #a5b4fc; border-color: #334155; }
+.spotlight-cap strong { color: #fff; }
 .atlas-step { font: 600 11px ui-monospace, Menlo, monospace; color: #4338ca; padding: 0 4px; white-space: nowrap; }
 .atlas-sel { font: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
 .atlas-chk { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #475569; }

@@ -193,7 +193,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
         </div>
         {hasRight && (
           <div className="right">
-            {f.atlas ? <AtlasPanel d2={f.atlas} />
+            {f.atlas ? <AtlasPanel d2={f.atlas} docs={f.docs} />
               : f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
               : f.fs ? <div className="fs-card"><FsTree tree={f.fs} /></div>
               : <Graph src={f.graph} lit={lit} />}

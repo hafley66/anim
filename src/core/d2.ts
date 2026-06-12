@@ -5,7 +5,7 @@
 import type { Edge, Model, Ref } from './model'
 import { entity, lastSeg, makeModel, parentOf } from './model'
 import { parseAnnotations } from './annotations'
-import { tourFromSteps } from './tour'
+import { tourFromSteps, toursFromRows } from './tour'
 import { installMainThreadWorkerShim } from './worker-shim'
 
 type RawNode = { id: string; name: string; mod: string }
@@ -63,7 +63,7 @@ export function proseHoverIds(text: string): Map<string, string> {
 // text -> Model via the WASM compiler. A compile failure yields an empty model
 // carrying the error in `note` — surfaced, never silently re-parsed.
 // `# step` rounds become model.tours[0] (a reveal Tour named 'rounds');
-// `# view` becomes model.seed.
+// `# tour` lines become named tours; `# view` becomes model.seed.
 export async function buildModel(text: string, { D2 = null }: { D2?: D2Compiler | null } = {}): Promise<Model> {
   let g: RawGraph
   try { g = await parseD2WASM(text, D2) } catch (e) { g = { nodes: [], edges: [], engine: 'none', note: e instanceof Error ? e.message : String(e) } }
@@ -81,6 +81,6 @@ export async function buildModel(text: string, { D2 = null }: { D2?: D2Compiler 
   for (const [id, loc] of Object.entries(a.src)) add(id, { panel: 'fs', locator: loc })
   for (const [k, loc] of Object.entries(a.srcE)) add(k, { panel: 'fs', locator: loc })   // edge refs keyed a>>b
   for (const r of a.reflist) add(r.key, { panel: r.panel, locator: r.locator })          // # ref <panel> ...
-  const tours = a.steps ? [tourFromSteps(a.steps)] : []
+  const tours = [...(a.steps ? [tourFromSteps(a.steps)] : []), ...toursFromRows(a.tourSteps)]
   return makeModel({ entities, edges, refs, tours, seed: a.viewSeed, engine: g.engine, note: g.note })
 }

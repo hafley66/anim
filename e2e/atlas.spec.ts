@@ -9,14 +9,16 @@ declare global {
       select: (ids: string[]) => void
       showAll: () => void
       setStepTo: (n: number) => void
+      tour: (name: string, dir?: number) => void
       ids: () => string[]
-      state: () => { focus: string[]; visible: number | null; round: number | null }
+      state: () => { focus: string[]; visible: number | null; round: number | null; spot: { file: string; lo: number; hi: number } | null }
     }
   }
 }
 
 const SEED_FRAME = 6    // start-here deck: atlas frame with a # view seed
-const STEPS_FRAME = 13  // sprefa deck: atlas frame with # step rounds + captions
+const SPOT_FRAME = 7    // start-here deck: atlas frame with a # tour span tour + doc:
+const STEPS_FRAME = 14  // sprefa deck: atlas frame with # step rounds + captions
 
 async function gotoFrame(page: Page, frame: number, errs: string[]): Promise<void> {
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()) })
@@ -83,6 +85,35 @@ test('multi-select unions cones and roundtrips through ?av=', async ({ page }) =
   await page.waitForTimeout(1200)
   const again = await page.evaluate(() => window.__atlas.state())
   expect(again.focus).toEqual(picked)
+  expect(errs).toEqual([])
+})
+
+test('span tour: spotlight opens on span steps, band FLIPs, reset closes it', async ({ page }) => {
+  const errs: string[] = []
+  await gotoFrame(page, SPOT_FRAME, errs)
+  // step 0 is a focus step: graph selection, no document surface
+  await page.evaluate(() => window.__atlas.tour('spotlight'))
+  await page.waitForTimeout(400)
+  await expect(page.locator('.spotlight')).toHaveCount(0)
+  expect((await page.evaluate(() => window.__atlas.state())).focus.length).toBe(2)
+  // step 1 is a span: the spotlight docks over the graph with the right file + band
+  await page.evaluate(() => window.__atlas.tour('spotlight'))
+  await expect(page.locator('.spotlight')).toBeVisible()
+  await expect(page.locator('.spotlight-file')).toContainText('src/core/codec.ts')
+  expect((await page.evaluate(() => window.__atlas.state())).spot).toEqual({ file: 'src/core/codec.ts', lo: 23, hi: 31 })
+  await expect(page.locator('.spotlight-cap')).toContainText('focus set')
+  // step 2 switches files; step 3 stays in the file and the band moves (the FLIP)
+  await page.evaluate(() => window.__atlas.tour('spotlight'))
+  await expect(page.locator('.spotlight-file')).toContainText('src/core/spotlight.ts')
+  await page.waitForTimeout(600)
+  const top2 = await page.locator('.spotlight-band').evaluate(el => parseFloat(getComputedStyle(el).top))
+  await page.evaluate(() => window.__atlas.tour('spotlight'))
+  await page.waitForTimeout(600)
+  const top3 = await page.locator('.spotlight-band').evaluate(el => parseFloat(getComputedStyle(el).top))
+  expect(top3).toBeGreaterThan(top2)
+  // reset clears the tour and the document surface
+  await page.locator('.atlas-btn', { hasText: 'reset' }).click()
+  await expect(page.locator('.spotlight')).toHaveCount(0)
   expect(errs).toEqual([])
 })
 

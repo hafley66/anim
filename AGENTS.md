@@ -90,6 +90,13 @@ net.route -> net.nexthop
 - `# tag id : hub,sink` styles a node by category (hub/sink/dead/ghost + fn/type/
   module/relation). `# diff add|del|mod id` tints add/del/mod. Cycles auto-color.
 - d2 **containers** (`net: L3 { ip; route }`) render as compound boxes you can lay out.
+- **Named tours**: `# tour <name> <seq> = <target> [: <comment>]`, one line per
+  step. The target is a focus set (`a+b`) or a span (`path:lo..hi`, 1-based
+  inclusive lines) — the same encoding as a rel `tour_step.target`. Focus steps
+  drive the graph; span steps open the **code spotlight** (a document surface
+  over the graph: highlight band FLIPs between ranges, scroll eases). Each tour
+  gets a ▶ button. Span files must be inlined with a `doc: <path>` line on the
+  frame (path relative to the repo root, written exactly as in the target).
 - **Pin the slice** the slide opens on with one comment:
   `# view focus=net.nexthop mode=cone layout=elk dir=LR iso`
   (mode = cone|neighbors|downstream|upstream; layout = dagre|elk|tree|rings|force|grid;

@@ -5,7 +5,9 @@
 
 import type { Model, Tour, TourStep } from './model'
 import type { Steps } from './annotations'
+import type { TourRow, TourStepRow } from './rows'
 import type { Adj } from './views'
+import { parseTarget } from './codec'
 import { buildAdj, cone, pathFrontier } from './views'
 
 // '# step' rounds -> one reveal step per round (0..max), caption as comment.
@@ -30,6 +32,21 @@ export function tourFromSequence(name: string, seq: LegacyTourStep[]): Tour {
       ...(s.note ? { comment: s.note } : {}),
     })),
   }
+}
+
+// raw tour_step rows (rel table or `# tour` annotation) -> Tours. Tour order:
+// the tour-row list first, then ids that only appear in steps (first appearance).
+// Row shapes live in rows.ts (the rel schema mirror); the import is type-only.
+export function toursFromRows(steps: TourStepRow[], tours: TourRow[] = []): Tour[] {
+  const stepsOf = new Map<string, TourStepRow[]>()
+  for (const s of steps) (stepsOf.get(s.tour) || stepsOf.set(s.tour, []).get(s.tour)!).push(s)
+  const rows: TourRow[] = [...tours]
+  for (const id of stepsOf.keys()) if (!rows.some(t => t.id === id)) rows.push({ id })
+  return rows.map(t => ({
+    id: t.id, ...(t.title ? { title: t.title } : {}),
+    steps: (stepsOf.get(t.id) || []).sort((a, b) => a.seq - b.seq)
+      .map(s => ({ target: parseTarget(s.target), ...(s.comment ? { comment: s.comment } : {}) })),
+  }))
 }
 
 const isReveal = (t: TourStep['target']): t is { reveal: string[] } => 'reveal' in t

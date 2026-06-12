@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { modelFromRows, parseTarget } from './rows'
+import { modelFromRows } from './rows'
+import { parseTarget } from './codec'
 
 describe('parseTarget', () => {
   it('file:lo..hi is a span', () => {

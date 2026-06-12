@@ -205,6 +205,10 @@ export function parseFrames(md) {
     if (g) { cur.graph = g[1].startsWith('/') ? g[1] : `/${g[1]}.svg`; continue }
     const c = line.match(/^code:\s+(.+?)\s*$/)
     if (c) { cur.codeRef = c[1]; continue }
+    // doc: <path> inlines the file for the atlas code spotlight (span tour steps);
+    // the path as written is the docs key and must match the tour target's file.
+    const dc = line.match(/^doc:\s+(.+?)\s*$/)
+    if (dc) { (cur.docRefs ||= []).push(dc[1]); continue }
     // ![[slug#title]] / ![[#title]] / ![[slug]] transcludes another frame's graph+code
     const inc = line.match(/^!\[\[([^\]]+)\]\]\s*$/)
     if (inc) { cur.include = inc[1].trim(); continue }
@@ -306,6 +310,15 @@ export function buildFrames() {
   }
   // resolve `git:` refs against the real repo
   for (const f of frames) if (f.gitRef) f.git = resolveGitRef(f.gitRef)
+  // resolve `doc:` refs: inline file text for the atlas code spotlight
+  for (const f of frames) if (f.docRefs) {
+    f.docs = {}
+    for (const p of f.docRefs) {
+      const fp = path.resolve(root, p)
+      if (!existsSync(fp)) { console.error(`doc: file not found: ${p}`); continue }
+      f.docs[p] = readFileSync(fp, 'utf8')
+    }
+  }
   graphs.push({ name: '_map', src: buildMapD2(frames) })
   mkdirSync(GRAPHS, { recursive: true })
   mkdirSync(PUBLIC, { recursive: true })
@@ -352,6 +365,7 @@ export function checkDeck() {
       if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas) diags.push(`ERROR ${at}: empty frame`)
       if (f.graph) { const n = f.graph.replace(/^\//, '').replace(/\.svg$/, ''); if (!graphNames.has(n)) diags.push(`ERROR ${at}: graph "${n}" is never defined`) }
       if (f.codeRef && !resolveCodeRef(f.codeRef)) diags.push(`ERROR ${at}: code: ${f.codeRef} did not resolve`)
+      for (const p of f.docRefs || []) if (!existsSync(path.resolve(root, p))) diags.push(`ERROR ${at}: doc: ${p} not found`)
       for (const L of f.links || []) if (!slugs.has(norm(L)) && !titles.has(norm(L))) diags.push(`WARN  ${at}: [[${L}]] resolves to nothing`)
       if ((f.anchors || []).length && !f.graph) diags.push(`WARN  ${at}: anchor(s) but no graph in this frame`)
     }

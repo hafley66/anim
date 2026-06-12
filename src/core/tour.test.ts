@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tourFromSequence, tourFromSteps, tourView } from './tour'
+import { tourFromSequence, tourFromSteps, toursFromRows, tourView } from './tour'
 import { entity, makeModel } from './model'
 import type { Steps } from './annotations'
 
@@ -68,6 +68,28 @@ describe('tourView focus/path/span targets', () => {
   it('span target is a document surface: null view', () => {
     const t = { id: 't', steps: [{ target: { span: { file: 'src/a.rs', lo: 1, hi: 9 } } }] }
     expect(tourView(model, t, 0)).toBeNull()
+  })
+})
+
+describe('toursFromRows', () => {
+  it('groups by tour id, sorts by seq, parses targets', () => {
+    const ts = toursFromRows([
+      { tour: 'walk', seq: 1, target: 'src/a.rs:3..7', comment: 'the seam' },
+      { tour: 'walk', seq: 0, target: 'a+b' },
+    ])
+    expect(ts).toHaveLength(1)
+    expect(ts[0].id).toBe('walk')
+    expect(ts[0].steps[0].target).toEqual({ focus: ['a', 'b'] })
+    expect(ts[0].steps[1]).toEqual({ target: { span: { file: 'src/a.rs', lo: 3, hi: 7 } }, comment: 'the seam' })
+  })
+  it('tour rows lead the order and carry titles; step-only ids follow', () => {
+    const ts = toursFromRows(
+      [{ tour: 'extra', seq: 0, target: 'a' }, { tour: 'named', seq: 0, target: 'b' }],
+      [{ id: 'named', title: 'start here' }, { id: 'empty' }],
+    )
+    expect(ts.map(t => t.id)).toEqual(['named', 'empty', 'extra'])
+    expect(ts[0].title).toBe('start here')
+    expect(ts[1].steps).toEqual([])
   })
 })
 
