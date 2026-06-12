@@ -35,6 +35,11 @@ every atlas change and read the PNG back before claiming done.
   deck directive (build-frames inlines it into f.docs; the path as written is
   the docs key and must match the tour target's file).
 - `src/Frames.jsx` — the deck shell (markdown via `marked`, left code panel, slide nav).
+  Also hosts the **Periscope** dock (screen edge, fixed): hover an ident (prose
+  `.natlas` span or a graph node) and AtlasPanel answers over the bus
+  (`PERISCOPE` event) with the ident's fs refs (`identRefs` in core/views.ts);
+  kept rows FLIP, entering rows draw on with an index-staggered connector.
+  e2e hook: `window.__peri`.
 - `src/core/` — framework-neutral shared model, TypeScript (strict, checked by
   tsgo), imported by both the static build and the atlas:
   - `model.ts` Entity/Edge/View/Model + Target/Tour types (Target, NOT Subject — RxJS owns Subject)

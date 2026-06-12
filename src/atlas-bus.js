@@ -5,3 +5,6 @@ import { Bus } from './core/bus'
 
 export const atlasBus = new Bus()
 export const HOVER = 'hover'   // detail = node id/name string, or null to clear
+// periscope feed: AtlasPanel resolves a hovered ident against the model and
+// answers with its fs refs. detail = { ident, rows: RefRow[] } | null.
+export const PERISCOPE = 'periscope'

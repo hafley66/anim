@@ -13,6 +13,10 @@ declare global {
       ids: () => string[]
       state: () => { focus: string[]; visible: number | null; round: number | null; spot: { file: string; lo: number; hi: number } | null }
     }
+    __peri: {
+      hover: (tok: string | null) => void
+      state: () => { ident: string; rows: Array<{ key: string }> } | null
+    }
   }
 }
 
@@ -114,6 +118,26 @@ test('span tour: spotlight opens on span steps, band FLIPs, reset closes it', as
   // reset clears the tour and the document surface
   await page.locator('.atlas-btn', { hasText: 'reset' }).click()
   await expect(page.locator('.spotlight')).toHaveCount(0)
+  expect(errs).toEqual([])
+})
+
+test('periscope: hovered ident docks its files, switch re-staggers, clear hides', async ({ page }) => {
+  const errs: string[] = []
+  await gotoFrame(page, SEED_FRAME, errs)
+  // full path: bus HOVER -> AtlasPanel resolves ident against the model -> PERISCOPE -> dock
+  await page.evaluate(() => window.__peri.hover('route'))
+  await expect(page.locator('.periscope')).toBeVisible()
+  await expect(page.locator('.peri-ident')).toContainText('route')
+  await expect(page.locator('.peri-row')).toHaveCount(1)
+  await expect(page.locator('.peri-loc')).toContainText('frr/zebra/zebra_rib.c:120')
+  await expect(page.locator('.peri-row.enter')).toHaveCount(1)        // fresh row draws on
+  // a different ident swaps the file list; the new row is an enter again
+  await page.evaluate(() => window.__peri.hover('nexthop'))
+  await expect(page.locator('.peri-loc')).toContainText('frr/zebra/zebra_nhg.c:88')
+  expect((await page.evaluate(() => window.__peri.state()))!.rows.map(r => r.key)).toEqual(['frr/zebra/zebra_nhg.c:88'])
+  // an ident with no fs refs (or hover-out) clears the dock
+  await page.evaluate(() => window.__peri.hover(null))
+  await expect(page.locator('.periscope')).toHaveCount(0)
   expect(errs).toEqual([])
 })
 

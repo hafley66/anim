@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, pathFrontier, reachableRefs } from './views'
+import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, identRefs, pathFrontier, reachableRefs, resolveIdent } from './views'
 import { entity, makeModel } from './model'
 
 // a -> b -> c ; x -> b (so b has two callers' worth of upstream)
@@ -81,5 +81,30 @@ describe('details and refs', () => {
   it('reachableRefs filters by panel and view', () => {
     const rows = reachableRefs(model, { entityIds: new Set(['a']) }, 'fs')
     expect(rows).toEqual([{ id: 'a', panel: 'fs', locator: 'src/a.rs:1' }])
+  })
+})
+
+describe('periscope: resolveIdent / identRefs', () => {
+  const m = makeModel({
+    entities: [
+      entity({ id: 'net.route', label: 'route' }),
+      entity({ id: 'net.ip', label: 'IP' }),
+      entity({ id: 'route' }),                       // bare id colliding with a lastSeg
+    ],
+    refs: new Map([
+      ['net.route', [{ panel: 'fs', locator: 'frr/zebra/zebra_rib.c:120' }, { panel: 'sql', locator: 'routes:dest=10/8' }]],
+      ['route', [{ panel: 'fs', locator: 'src/route.rs:1' }]],
+    ]),
+  })
+  it('matches id, label, and last id segment, case-insensitive', () => {
+    expect(resolveIdent(m, 'net.route')).toEqual(['net.route'])
+    expect(resolveIdent(m, 'ip')).toEqual(['net.ip'])
+    expect(resolveIdent(m, 'ROUTE').sort()).toEqual(['net.route', 'route'])
+    expect(resolveIdent(m, 'nope')).toEqual([])
+  })
+  it('identRefs filters to one panel across all matches', () => {
+    expect(identRefs(m, 'route').map(r => r.locator).sort()).toEqual(['frr/zebra/zebra_rib.c:120', 'src/route.rs:1'])
+    expect(identRefs(m, 'route', 'sql')).toEqual([{ id: 'net.route', panel: 'sql', locator: 'routes:dest=10/8' }])
+    expect(identRefs(m, 'ip')).toEqual([])
   })
 })

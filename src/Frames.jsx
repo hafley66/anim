@@ -6,7 +6,7 @@ import AtlasPanel from './AtlasPanel.jsx'
 import { proseHoverIds } from './core/d2'
 import { diff } from './core/transition'
 import { explorerRows } from './core/tree'
-import { atlasBus, HOVER } from './atlas-bus.js'
+import { atlasBus, HOVER, PERISCOPE } from './atlas-bus.js'
 
 // One frame === one idea. Code and graph are both OPTIONAL: a frame can be pure
 // prose (a durable discussion note), prose + code, prose + graph, or all three.
@@ -85,7 +85,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
   const codeWrapRef = useRef(null)
   const narrationRef = useRef(null)
   useEffect(() => { sessionStorage.setItem('frame', String(i)) }, [i])
-  useEffect(() => { setLit(null); setMore(false) }, [i])
+  useEffect(() => { setLit(null); setMore(false); atlasBus.emit(PERISCOPE, null) }, [i])
   const f = frames[i]
 
   // anchor hover: light the graph node(s) and the matching code token together
@@ -201,6 +201,8 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
         )}
       </div>
 
+      <Periscope />
+
       {map && <MapView current={i} onJump={(idx) => { setI(idx); setMap(false) }} onClose={() => setMap(false)} />}
 
       {outline && (
@@ -250,6 +252,57 @@ function flipRows(wrap, rectsRef) {
     }
   })
   rectsRef.current = now
+}
+
+// Periscope: a screen-edge dock answering "which files mention the hovered
+// ident?". AtlasPanel resolves HOVER(ident) against its model and emits
+// PERISCOPE({ident, rows}); this renders the file list. Kept rows FLIP to their
+// new position (flipRows), entering rows draw on with an index-staggered
+// connector (--i feeds the CSS animation-delay). Exit = the dock re-renders
+// without the row; enter/keep come from core/transition diff on locator keys.
+function Periscope() {
+  const [p, setP] = useState(null)            // { ident, rows: [{key, fresh, i}] } | null
+  const pRef = useRef(null)
+  const prevKeys = useRef(new Set())
+  const wrapRef = useRef(null)
+  const rects = useRef(new Map())
+
+  useEffect(() => {
+    const off = atlasBus.on(PERISCOPE, (payload) => {
+      if (!payload || !payload.rows || !payload.rows.length) {
+        prevKeys.current = new Set(); rects.current = new Map()
+        pRef.current = null; setP(null); return
+      }
+      const locs = [...new Set(payload.rows.map((r) => r.locator))]
+      const d = diff(prevKeys.current, locs)
+      let n = 0
+      const rows = locs.map((loc) => ({ key: loc, fresh: d.enter.has(loc), i: d.enter.has(loc) ? n++ : 0 }))
+      prevKeys.current = new Set(locs)
+      pRef.current = { ident: payload.ident, rows }
+      setP(pRef.current)
+    })
+    // e2e hook: drive the full path (bus -> AtlasPanel resolve -> PERISCOPE -> dock)
+    window.__peri = { hover: (tok) => atlasBus.emit(HOVER, tok), state: () => pRef.current }
+    return () => { off(); delete window.__peri }
+  }, [])
+
+  useLayoutEffect(() => { flipRows(wrapRef.current, rects) }, [p])
+
+  if (!p) return null
+  return (
+    <div className="periscope" ref={wrapRef}>
+      <div className="peri-head">
+        <span className="peri-ident">{p.ident}</span>
+        <span className="peri-count">{p.rows.length} file{p.rows.length === 1 ? '' : 's'}</span>
+      </div>
+      {p.rows.map((r) => (
+        <div key={r.key} data-key={r.key} className={`peri-row${r.fresh ? ' enter' : ''}`} style={{ '--i': r.i }}>
+          <span className="peri-line" />
+          <span className="peri-loc">{r.key}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // Git lens: a commit timeline (newest on top) that FLIP-animates between frames —

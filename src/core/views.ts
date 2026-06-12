@@ -76,6 +76,24 @@ export function reachableRefs(model: Model, view: Pick<View, 'entityIds'>, panel
   return out
 }
 
+// resolve an ident token to entity ids: id, label, or last id segment,
+// case-insensitive. The periscope's WHERE clause.
+export function resolveIdent(model: Model, ident: string): string[] {
+  const t = String(ident).toLowerCase()
+  return model.entities
+    .filter(e => e.id.toLowerCase() === t || e.label.toLowerCase() === t || lastSeg(e.id).toLowerCase() === t)
+    .map(e => e.id)
+}
+
+// the periscope query: ident -> the RefRows of every matching entity in one
+// panel (fs by default: "which files mention this ident").
+export function identRefs(model: Model, ident: string, panel: string = 'fs'): RefRow[] {
+  const out: RefRow[] = []
+  for (const id of resolveIdent(model, ident))
+    for (const r of model.refs.get(id) || []) if (!panel || r.panel === panel) out.push({ id, ...r })
+  return out
+}
+
 // the detail-panel payload for a selected node.
 export function detailFor(model: Model, id: string): Detail | null {
   const ent = model.entities.find(e => e.id === id)

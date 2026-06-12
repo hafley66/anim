@@ -16,7 +16,7 @@ import expandCollapse from 'cytoscape-expand-collapse'
 import { buildModel, loadD2 } from './core/d2'
 import { lastSeg, parentOf } from './core/model'
 import { scc, topoTiers } from './core/tarjan'
-import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, predecessors, reachableRefs, successors } from './core/views'
+import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, identRefs, predecessors, reachableRefs, successors } from './core/views'
 import { tourFromSequence, tourView } from './core/tour'
 import { tierCells, gridCell } from './core/layout'
 import { heat as computeHeat } from './core/metrics'
@@ -25,7 +25,7 @@ import { transitionViews } from './core/transition'
 import { Tree } from 'react-arborist'
 import { buildTree, toForest, nodeCount } from './core/tree'
 import { panelSpec, pathOfFor, panelKeysOf } from './core/panels'
-import { atlasBus, HOVER } from './atlas-bus.js'
+import { atlasBus, HOVER, PERISCOPE } from './atlas-bus.js'
 import CodeSpotlight from './CodeSpotlight.jsx'
 
 let dagreReg = false, elkReg = false
@@ -354,6 +354,10 @@ export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
       cy.on('tap', ev => { if (ev.target === cy) showAll() })
       cy.on('mouseover', 'node', ev => {
         const id = ev.target.id(); setLitRow(id)
+        if (!ev.target.data('grp')) {                            // periscope: this node's files
+          const rows = identRefs(model, id)
+          atlasBus.emit(PERISCOPE, rows.length ? { ident: lastSeg(id), rows } : null)
+        }
         const rp = ev.target.renderedPosition()
         const a = anchorRef.current, t = tipRef.current
         if (!a || !t) return
@@ -361,7 +365,7 @@ export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
         t.innerHTML = noteOf.get(id) ? noteToHTML(noteOf.get(id)) : esc(id)
         if (!t.matches(':popover-open')) { try { t.showPopover() } catch {} }
       })
-      cy.on('mouseout', 'node', () => { setLitRow(null); try { tipRef.current?.hidePopover() } catch {} })
+      cy.on('mouseout', 'node', () => { setLitRow(null); atlasBus.emit(PERISCOPE, null); try { tipRef.current?.hidePopover() } catch {} })
       // edge hover -> show WHY the edge exists (its # @ a -> b note), anchored at the cursor.
       cy.on('mouseover', 'edge', ev => {
         const note = ev.target.data('enote') || ev.target.data('elabel')
@@ -421,16 +425,19 @@ export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
     return () => { alive = false; cyRef.current?.destroy(); cyRef.current = null }
   }, [d2])
 
-  // narration hover -> light the matching node + its rows (core/bus.ts in action)
+  // narration hover -> light the matching node + its rows (core/bus.ts in action),
+  // and answer with the ident's files (the periscope feed).
   useEffect(() => {
     const off = atlasBus.on(HOVER, tok => {
       const cy = cyRef.current; if (!cy) return
       cy.nodes().removeClass('hot')
-      if (!tok) { setLitRow(null); return }
+      if (!tok) { setLitRow(null); atlasBus.emit(PERISCOPE, null); return }
       const t = String(tok).toLowerCase()
       const hit = cy.nodes().filter(n => n.id().toLowerCase() === t || (n.data('name') || '').toLowerCase() === t)
       hit.addClass('hot')
       setLitRow(hit.nonempty() ? hit[0].id() : null)
+      const rows = S.current.model ? identRefs(S.current.model, tok) : []
+      atlasBus.emit(PERISCOPE, rows.length ? { ident: tok, rows } : null)
     })
     return off
   }, [])

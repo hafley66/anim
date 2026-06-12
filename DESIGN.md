@@ -104,12 +104,15 @@ between ranges, scroll eases. Coordinates come from the ref spine
 Use cases: PR/AI-session explainer (AI emits span-anchored tour_step rows —
 claims are mechanically checkable, prose capped at comment).
 
-### 3. Periscope (hover -> refs-in-fs)
+### 3. Periscope (hover -> refs-in-fs) — DONE (2026-06-12)
 
-HOVER(ident) [atlasBus, wired] -> SELECT file FROM rel_ref WHERE ident = ?
--> transitionRefs over the fs tree (tree.ts + FS lens FLIP rows, both exist)
--> staggered connector draw-on (index-based delay). Only new pixel work is the
-stagger + screen-edge dock.
+HOVER(ident) [atlasBus] -> resolveIdent/identRefs (core/views.ts: id|label|lastSeg,
+case-insensitive, fs panel) -> PERISCOPE bus event ({ident, rows}|null) -> the
+Periscope dock in Frames.jsx (fixed, screen edge). Kept rows FLIP (flipRows);
+entering rows + connector draw on with an index stagger (`--i` ->
+animation-delay). AtlasPanel emits from both hover sources: the prose HOVER
+listener and cy node mouseover/mouseout. Frame change and hover-out clear it.
+e2e hook: window.__peri { hover(tok), state() }.
 
 ## Use-case ledger (subject kind per row)
 
