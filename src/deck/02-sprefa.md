@@ -256,3 +256,20 @@ you -> source: "edit"
 ```
 
 See [[one tick]] for the same loop one level down.
+
+## the deck tours its own diff
+
+Everything on this slide was made by the things it shows. The oxc producer
+(written today) read anim's own TypeScript; `anim-self.dl` derived these nodes
+and edges from that type graph and authored the **▶ today** tour as datalog
+facts; the `atlas-db` fence (written today) loaded them; the span steps open
+the **spotlight** (colored today) on the **periscope** (written today), which
+answers hovers on this very graph. Press ▶ today.
+
+doc: src/core/views.ts
+doc: src/Frames.tsx
+doc: src/CodeSpotlight.tsx
+doc: bin/build-frames.mjs
+
+```atlas-db data/animself.sqlite
+```
