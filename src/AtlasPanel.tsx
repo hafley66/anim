@@ -179,9 +179,10 @@ export type AtlasPanelProps = {
   rows?: RelRows | null
   tours?: Record<string, LegacyTourStep[]>
   docs?: Record<string, string>
+  highlighter?: any   // shiki instance for the spotlight; absent (embed) -> plain text
 }
 
-export default function AtlasPanel({ d2, rows, tours = {}, docs = {} }: AtlasPanelProps) {
+export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighter }: AtlasPanelProps) {
   const cyEl = useRef<HTMLDivElement>(null)
   const cyRef = useRef<Cy>(null)
   const anchorRef = useRef<HTMLDivElement>(null)   // 1px element placed at the hovered node (the only JS)
@@ -573,7 +574,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {} }: AtlasPan
         <div className="atlas-anchor" ref={anchorRef} />
         <div className="atlas-tip" ref={tipRef} />
         {stepUI && stepUI.cap && <div className="atlas-cap" dangerouslySetInnerHTML={{ __html: noteToHTML(stepUI.cap) }} />}
-        {spot && <CodeSpotlight docs={docs} span={spot.span}
+        {spot && <CodeSpotlight docs={docs} span={spot.span} highlighter={highlighter}
                                 commentHTML={spot.comment ? noteToHTML(spot.comment) : ''}
                                 onClose={() => showSpot(null)} />}
       </div>

@@ -9,9 +9,10 @@
 //   ```prolog        ```rust ...   -> the code block (info string = lang)
 //   ```d2 name   ...              -> inline graph; rendered to /name.svg
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 // node:sqlite is built into Node 22.5+/24 (no dependency). Loaded via require so
@@ -250,6 +251,10 @@ export function parseFrames(md) {
     // the path as written is the docs key and must match the tour target's file.
     const dc = line.match(/^doc:\s+(.+?)\s*$/)
     if (dc) { (cur.docRefs ||= []).push(dc[1]); continue }
+    // spot: <file>:<lo>..<hi> mounts the code spotlight as the right panel of a
+    // plain frame (same target encoding as a tour span; file needs a doc: line)
+    const sp = line.match(/^spot:\s+(\S+)\s*$/)
+    if (sp) { cur.spot = sp[1]; continue }
     // ![[slug#title]] / ![[#title]] / ![[slug]] transcludes another frame's graph+code
     const inc = line.match(/^!\[\[([^\]]+)\]\]\s*$/)
     if (inc) { cur.include = inc[1].trim(); continue }
@@ -392,6 +397,34 @@ export function buildFrames() {
   return { frames: frames.length, graphs: graphs.length }
 }
 
+// Per-fence d2 validation for --check: compile each graph (kit + autocolor for
+// static d2 fences — exactly what the build renders; raw text for atlas fences,
+// which compile kit-less at runtime) through `d2 validate` and map failures
+// back to their fence. d2's line:col is offset by the kit prefix so the
+// numbers point into the author's fence, not the temp file.
+let d2Present = null
+const hasD2 = () => (d2Present ??= (() => { try { execFileSync('d2', ['--version'], { stdio: 'pipe' }); return true } catch { return false } })())
+function validateD2(name, src, { kit: useKit = true } = {}) {
+  if (!hasD2()) return null
+  const kit = useKit && existsSync(KIT) ? readFileSync(KIT, 'utf8') + '\n' : ''
+  const kitLines = kit ? kit.split('\n').length - 1 : 0
+  const noauto = !useKit || /(^|\n)\s*#\s*noautocolor/.test(src)
+  const body = noauto ? src : autoColorCycles(src)
+  const tmp = path.join(tmpdir(), `anim-check-${name.replace(/\W+/g, '-')}.d2`)
+  writeFileSync(tmp, kit + body)
+  try {
+    execFileSync('d2', ['validate', tmp], { stdio: 'pipe' })
+    return null
+  } catch (e) {
+    const raw = String(e.stderr || e.message)
+    // rewrite "N:C:" line refs into fence-relative lines
+    return raw.trim().split('\n').map(l =>
+      l.replace(/(\s|:)(\d+):(\d+):/, (_, pre, ln, col) => `${pre}${Math.max(1, +ln - kitLines)}:${col}:`)
+       .replace(/^err:\s*/, '').replace(/oss\.terrastruct\.com\S*:\s*/, '')
+    ).join(' · ')
+  } finally { try { rmSync(tmp) } catch {} }
+}
+
 const KIT_CLASSES = new Set(['fn', 'relation', 'type', 'module', 'sink', 'dead', 'hub', 'ghost'])
 // Lint the deck without launching the app: an AI gets compiler-style errors it can
 // fix in one turn. Checks broken [[links]], undefined graphs, missing code: files,
@@ -408,8 +441,14 @@ export function checkDeck() {
     const rel = path.relative(root, pf.file)
     for (const f of pf.frames) {
       const at = `${rel} › "${f.title}"`
-      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas && !f.atlasDb) diags.push(`ERROR ${at}: empty frame`)
+      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas && !f.atlasDb && !f.spot) diags.push(`ERROR ${at}: empty frame`)
       if (f.atlasDb && !rowsFromDb(f.atlasDb)) diags.push(`ERROR ${at}: atlas-db ${f.atlasDb} did not load (see message above)`)
+      if (f.atlas) { const err = validateD2(`atlas-${f.title}`, f.atlas, { kit: false }); if (err) diags.push(`ERROR ${at}: atlas fence does not compile: ${err}`) }
+      if (f.spot) {
+        const m = f.spot.match(/^(.+):(\d+)\.\.(\d+)$/)
+        if (!m) diags.push(`ERROR ${at}: spot: ${f.spot} is not file:lo..hi`)
+        else if (!(f.docRefs || []).includes(m[1])) diags.push(`ERROR ${at}: spot: ${m[1]} has no matching doc: line`)
+      }
       if (f.graph) { const n = f.graph.replace(/^\//, '').replace(/\.svg$/, ''); if (!graphNames.has(n)) diags.push(`ERROR ${at}: graph "${n}" is never defined`) }
       if (f.codeRef && !resolveCodeRef(f.codeRef)) diags.push(`ERROR ${at}: code: ${f.codeRef} did not resolve`)
       for (const p of f.docRefs || []) if (!existsSync(path.resolve(root, p))) diags.push(`ERROR ${at}: doc: ${p} not found`)
@@ -417,6 +456,7 @@ export function checkDeck() {
       if ((f.anchors || []).length && !f.graph) diags.push(`WARN  ${at}: anchor(s) but no graph in this frame`)
     }
     for (const g of pf.graphs) if (g.src) for (const m of g.src.matchAll(/\.class:\s*(\w+)/g)) if (!KIT_CLASSES.has(m[1])) diags.push(`WARN  ${rel} (graph ${g.name}): unknown kit class "${m[1]}"`)
+    for (const g of pf.graphs) if (g.src) { const err = validateD2(g.name, g.src); if (err) diags.push(`ERROR ${rel} (graph ${g.name}): d2 does not compile: ${err}`) }
   }
   return diags
 }

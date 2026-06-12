@@ -22,6 +22,7 @@ export type Frame = {
   atlasDb?: string
   atlasRows?: RelRows
   docs?: Record<string, string>
+  spot?: string
   codeRef?: string
   include?: string
 }

@@ -4,25 +4,60 @@
 // and the scroll eases to keep the band centered (scroll constancy). All
 // geometry comes from core/spotlight.ts; this file owns only DOM and easing.
 // A file switch remounts the doc (keyed by file) — no cross-file tween.
-import React, { useLayoutEffect, useMemo, useRef } from 'react'
+//
+// Syntax highlighting is OPTIONAL: pass the deck's shiki highlighter and lines
+// render as colored tokens (lang from the file extension, light theme loaded
+// lazily); without one (the embed) the doc stays plain monospace. Tokenizing
+// never changes geometry — one .sline per line at LINE_H either way.
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { bandFor, clampSpan, scrollFor } from './core/spotlight'
 import type { Span } from './core/model'
 
 export const LINE_H = 18   // px; must match .spotlight-pre line-height in app.css
+const SPOT_THEME = 'github-light'   // the spotlight surface is light; the deck theme (nord) is dark
+const LANG_BY_EXT: Record<string, string> = {
+  rs: 'rust', ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx', mjs: 'javascript',
+  py: 'python', go: 'go', c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', java: 'java', rb: 'ruby',
+  sql: 'sql', sh: 'bash', bash: 'bash', json: 'json', toml: 'toml', yaml: 'yaml', yml: 'yaml',
+  md: 'markdown', css: 'css', html: 'html', d2: 'text', dl: 'prolog',
+}
+const langOf = (file: string) => LANG_BY_EXT[file.split('.').pop()!.toLowerCase()] || 'text'
+
+type Token = { content: string; color?: string }
 
 export type CodeSpotlightProps = {
   docs?: Record<string, string>
   span: Span
   commentHTML?: string
   onClose?: () => void
+  highlighter?: any   // shiki highlighter instance; absent -> plain text
 }
 
-export default function CodeSpotlight({ docs = {}, span, commentHTML, onClose }: CodeSpotlightProps) {
+export default function CodeSpotlight({ docs = {}, span, commentHTML, onClose, highlighter }: CodeSpotlightProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const doc = docs[span.file]
   const lines = useMemo(() => (doc == null ? [] : doc.replace(/\n$/, '').split('\n')), [doc])
   const s = clampSpan(span, lines.length || 1)
   const band = bandFor(span, LINE_H, lines.length || 1)
+  const [toks, setToks] = useState<Token[][] | null>(null)
+
+  // tokenize per file (not per span): lang + theme load lazily, plain on any failure
+  useEffect(() => {
+    let alive = true
+    setToks(null)
+    if (!highlighter || doc == null) return
+    ;(async () => {
+      try {
+        const lang = langOf(span.file)
+        if (lang === 'text') return
+        if (!highlighter.getLoadedLanguages().includes(lang)) await highlighter.loadLanguage(lang)
+        if (!highlighter.getLoadedThemes().includes(SPOT_THEME)) await highlighter.loadTheme(SPOT_THEME)
+        const out = highlighter.codeToTokensBase(doc.replace(/\n$/, ''), { lang, theme: SPOT_THEME }) as Token[][]
+        if (alive) setToks(out)
+      } catch (e) { console.warn('spotlight highlight failed, staying plain:', e) }
+    })()
+    return () => { alive = false }
+  }, [span.file, doc, highlighter])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -46,7 +81,10 @@ export default function CodeSpotlight({ docs = {}, span, commentHTML, onClose }:
               <pre className="spotlight-pre">
                 {lines.map((l, i) => (
                   <div key={i} className={`sline${i + 1 >= s.lo && i + 1 <= s.hi ? ' lit' : ''}`}>
-                    <span className="sno">{i + 1}</span>{l}
+                    <span className="sno">{i + 1}</span>
+                    {toks && toks[i]
+                      ? toks[i].map((t, j) => <span key={j} style={t.color ? { color: t.color } : undefined}>{t.content}</span>)
+                      : l}
                   </div>
                 ))}
               </pre>

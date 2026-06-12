@@ -6,11 +6,3 @@ declare module 'cytoscape-dagre'
 declare module 'cytoscape-elk'
 declare module 'cytoscape-expand-collapse'
 declare module 'shiki-magic-move/react'
-declare module '*frames.json' {
-  const frames: import('./deck').Frame[]
-  export default frames
-}
-declare module '*glossary.json' {
-  const glossary: Record<string, string>
-  export default glossary
-}

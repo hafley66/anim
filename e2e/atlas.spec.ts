@@ -22,8 +22,9 @@ declare global {
 
 const SEED_FRAME = 6    // start-here deck: atlas frame with a # view seed
 const SPOT_FRAME = 7    // start-here deck: atlas frame with a # tour span tour + doc:
-const STEPS_FRAME = 14  // sprefa deck: atlas frame with # step rounds + captions
-const ROWS_FRAME = 15   // sprefa deck: atlas-db frame (model from rel_* rows, no d2)
+const STATIC_SPOT = 8   // start-here deck: spot: frame (document surface, no atlas); 9 = same file, next range
+const STEPS_FRAME = 16  // sprefa deck: atlas frame with # step rounds + captions
+const ROWS_FRAME = 17   // sprefa deck: atlas-db frame (model from rel_* rows, no d2)
 
 async function gotoFrame(page: Page, frame: number, errs: string[]): Promise<void> {
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()) })
@@ -139,6 +140,27 @@ test('periscope: hovered ident docks its files, switch re-staggers, clear hides'
   // an ident with no fs refs (or hover-out) clears the dock
   await page.evaluate(() => window.__peri.hover(null))
   await expect(page.locator('.periscope')).toHaveCount(0)
+  expect(errs).toEqual([])
+})
+
+test('static spot: frame mounts the document surface; next frame FLIPs the band', async ({ page }) => {
+  const errs: string[] = []
+  page.on('console', m => { if (m.type() === 'error') errs.push(m.text()) })
+  page.on('pageerror', e => errs.push(String(e)))
+  await page.goto('/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.title', { timeout: 10_000 })
+  await page.evaluate(f => sessionStorage.setItem('frame', String(f)), STATIC_SPOT)
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.locator('.spot-card .spotlight')).toBeVisible()
+  await expect(page.locator('.spotlight-file')).toContainText('src/core/spotlight.ts')
+  await page.waitForTimeout(700)
+  const top0 = await page.locator('.spotlight-band').evaluate(el => parseFloat(getComputedStyle(el).top))
+  // shiki tokens land async; the doc must end up colored (plain text has no styled spans)
+  await expect(page.locator('.spotlight-pre .sline span[style*="color"]').first()).toBeAttached()
+  await page.keyboard.press('ArrowRight')   // frame 9: same file, later range
+  await page.waitForTimeout(700)
+  const top1 = await page.locator('.spotlight-band').evaluate(el => parseFloat(getComputedStyle(el).top))
+  expect(top1).toBeGreaterThan(top0)        // file resident, band FLIPped
   expect(errs).toEqual([])
 })
 

@@ -3,6 +3,8 @@ import { ShikiMagicMove } from 'shiki-magic-move/react'
 import { marked } from 'marked'
 import panzoom from 'panzoom'
 import AtlasPanel from './AtlasPanel'
+import CodeSpotlight from './CodeSpotlight'
+import { parseTarget } from './core/codec'
 import { proseHoverIds } from './core/d2'
 import { diff } from './core/transition'
 import { explorerRows } from './core/tree'
@@ -142,7 +144,14 @@ export default function Frames({ frames, highlighter, theme, glossary }: FramesP
   const hasCode = !!(f.code && f.code.trim())
   const hasGraph = !!f.graph
   const hasAtlas = !!(f.atlas || f.atlasRows)
-  const hasRight = !!(f.graph || f.fs || f.git || hasAtlas)
+  // a `spot:` directive mounts the document surface as the right panel of a
+  // plain frame; the span target reuses the tour encoding (file:lo..hi)
+  const spotSpan = useMemo(() => {
+    if (!f.spot) return null
+    const t = parseTarget(f.spot)
+    return 'span' in t ? t.span : null
+  }, [f.spot])
+  const hasRight = !!(f.graph || f.fs || f.git || hasAtlas || spotSpan)
   const html = useMemo(() => {
     // render [[other-slide]] cross-links as styled references
     const src = (f.narration || '').replace(/\[\[([^\]]+)\]\]/g, '<span class="xref">$1</span>')
@@ -205,9 +214,10 @@ export default function Frames({ frames, highlighter, theme, glossary }: FramesP
         </div>
         {hasRight && (
           <div className="right">
-            {hasAtlas ? <AtlasPanel d2={f.atlas} rows={f.atlasRows} docs={f.docs} />
+            {hasAtlas ? <AtlasPanel d2={f.atlas} rows={f.atlasRows} docs={f.docs} highlighter={highlighter} />
               : f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
               : f.fs ? <div className="fs-card"><FsTree tree={f.fs} /></div>
+              : spotSpan ? <div className="spot-card"><CodeSpotlight docs={f.docs} span={spotSpan} highlighter={highlighter} /></div>
               : <Graph src={f.graph} lit={lit} />}
           </div>
         )}

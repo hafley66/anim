@@ -139,6 +139,8 @@ e2e hook: window.__peri { hover(tok), state() }.
 
 - oxc JS/TS producer in dl
 - one-world-per-deck vs adjacency lint (anim backlog, still unchosen)
-- native d2 syntax migration; per-fence d2 compile errors in npm run check
+- native d2 syntax migration (per-fence d2 compile errors in npm run check:
+  DONE 2026-06-12 via `d2 validate` per fence, kit-offset line numbers;
+  shiki in CodeSpotlight + `spot:` static frames also DONE same day)
 - css-anchor-node-editor/ experiment: fold its anchoring findings into the DOM
   overlay layer when reps 1–3 land

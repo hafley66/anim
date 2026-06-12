@@ -159,3 +159,24 @@ core.tour -> core.spotlight: span steps land here {style.stroke-dash: 3}
 # tour spotlight 2 = src/core/spotlight.ts:10..21 : lines clamp, then become a pixel band
 # tour spotlight 3 = src/core/spotlight.ts:23..28 : the scroll target centers the band, clamped to the doc
 ```
+
+## a spotlight without a graph
+
+`spot: <file>:<lo>..<hi>` mounts the same **document surface** as a plain
+frame's right panel — no atlas, no tour. The target string is the same
+encoding a tour span uses, and the file arrives through the same `doc:` line.
+Syntax colors come from the deck's own [shiki] highlighter.
+
+doc: src/core/spotlight.ts
+
+spot: src/core/spotlight.ts:10..21
+
+## the band moves, the file stays
+
+Step back and forth between this frame and the last one: the file is resident
+across frames, so only the **band** and the scroll move — the same FLIP the
+tour player drives, now driven by the deck itself.
+
+doc: src/core/spotlight.ts
+
+spot: src/core/spotlight.ts:23..28

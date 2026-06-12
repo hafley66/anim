@@ -106,6 +106,20 @@ net.route -> net.nexthop
   graph and the atlas are two renderers over one model; the node id is the join
   key. One frame uses one right panel: atlas OR graph OR fs OR git.
 
+## Right panel — code spotlight (no graph)
+
+```markdown
+doc: src/core/spotlight.ts
+
+spot: src/core/spotlight.ts:10..21
+```
+
+`spot: <file>:<lo>..<hi>` mounts the document surface as the frame's right
+panel: line numbers, a highlight band over the range, shiki syntax colors.
+The file needs a matching `doc:` line. Consecutive frames spotting the SAME
+file keep it resident — only the band and scroll move (the FLIP). Same target
+encoding as a tour span.
+
 ## Right panel — interactive atlas (from a database)
 
 The same atlas, but the model comes from relational rows instead of d2 text.
@@ -176,6 +190,8 @@ occurrence of each term in any frame's prose gets a hover card automatically.
 ## Checklist before you finish
 
 1. `npm run check` returns `0 error(s)`. Fix every ERROR; WARN is usually fine.
+   (This also d2-compiles every `d2` and `atlas` fence and reports per-fence
+   errors with fence-relative line numbers.)
 2. Every `graph:` / `![[...]]` reference points at something that exists.
 3. Adjacent code frames are similar enough to tween.
 4. Each frame has at least one of: prose, code, graph, fs.
