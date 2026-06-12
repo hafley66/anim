@@ -27,7 +27,10 @@ describe('modelFromRows', () => {
     ],
     cards: [{ id: 'card.why', body: 'Engine drives everything' }],
     card_about: [{ card: 'card.why', node: 'Engine' }],
-    views: [{ id: 'default', focus: 'Engine', mode: 'cone' }],
+    views: [
+      { id: 'default', focus: 'Engine', mode: 'cone' },
+      { id: 'seed', focus: 'Engine+Db', mode: 'downstream', dir: 'LR', iso: 1 },
+    ],
     refs: [{ node: 'Engine', panel: 'fs', locator: 'src/engine.rs:1' }],
   })
 
@@ -55,5 +58,9 @@ describe('modelFromRows', () => {
   it('refs and named view seeds land', () => {
     expect(model.refs.get('Engine')).toEqual([{ panel: 'fs', locator: 'src/engine.rs:1' }])
     expect(model.seeds!.default).toEqual({ focus: ['Engine'], mode: 'cone' })
+  })
+
+  it("a view row named 'seed' pins the opening view, dir/iso included", () => {
+    expect(model.seed).toEqual({ focus: ['Engine', 'Db'], mode: 'downstream', dir: 'LR', iso: true })
   })
 })

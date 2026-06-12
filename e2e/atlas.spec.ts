@@ -23,6 +23,7 @@ declare global {
 const SEED_FRAME = 6    // start-here deck: atlas frame with a # view seed
 const SPOT_FRAME = 7    // start-here deck: atlas frame with a # tour span tour + doc:
 const STEPS_FRAME = 14  // sprefa deck: atlas frame with # step rounds + captions
+const ROWS_FRAME = 15   // sprefa deck: atlas-db frame (model from rel_* rows, no d2)
 
 async function gotoFrame(page: Page, frame: number, errs: string[]): Promise<void> {
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()) })
@@ -138,6 +139,23 @@ test('periscope: hovered ident docks its files, switch re-staggers, clear hides'
   // an ident with no fs refs (or hover-out) clears the dock
   await page.evaluate(() => window.__peri.hover(null))
   await expect(page.locator('.periscope')).toHaveCount(0)
+  expect(errs).toEqual([])
+})
+
+test('atlas-db: model loads from rel_* rows, seed view applies, row tour steps', async ({ page }) => {
+  const errs: string[] = []
+  await gotoFrame(page, ROWS_FRAME, errs)
+  // the db-emitted view('seed', 'Engine', 'downstream', ...) pins the opening view
+  const s0 = await page.evaluate(() => window.__atlas.state())
+  expect(s0.focus).toEqual(['Engine'])
+  // the db-emitted tour walks: step 1 is the Engine+Db focus pair
+  await page.evaluate(() => { window.__atlas.tour('rows'); window.__atlas.tour('rows') })
+  await page.waitForTimeout(500)
+  expect((await page.evaluate(() => window.__atlas.state())).focus).toEqual(['Engine', 'Db'])
+  await expect(page.locator('.atlas-btn', { hasText: '▶ rows' })).toContainText('2/3')
+  // node_ref rows feed the fs panel and the periscope
+  await page.evaluate(() => window.__peri.hover('Engine'))
+  await expect(page.locator('.peri-loc')).toContainText('sprefa/v5/src/engine.rs')
   expect(errs).toEqual([])
 })
 

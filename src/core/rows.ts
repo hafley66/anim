@@ -3,8 +3,8 @@
 // core never opens a database. Row shapes mirror the rel schema:
 //   node(id, kind, label) · edge(id, f, t, kind) · tag(node, ns, value)
 //   tour(id, title) · tour_step(tour, seq, target, comment)
-//   card(id, body) · card_about(card, node) · view(id, focus, mode, layout)
-//   ref(node, panel, locator)
+//   card(id, body) · card_about(card, node) · view(id, focus, mode, layout, dir, iso)
+//   node_ref(node, panel, locator)   (`ref` is reserved in dl: the span spine)
 
 import type { Edge, Entity, Model, Ref, Tour, ViewSeed } from './model'
 import { entity, lastSeg, makeModel, parentOf } from './model'
@@ -18,7 +18,7 @@ export type TourRow = { id: string; title?: string }
 export type TourStepRow = { tour: string; seq: number; target: string; comment?: string }
 export type CardRow = { id: string; body: string }
 export type CardAboutRow = { card: string; node: string }
-export type ViewRow = { id: string; focus?: string; mode?: string; layout?: string }
+export type ViewRow = { id: string; focus?: string; mode?: string; layout?: string; dir?: string; iso?: number | boolean }
 export type RefRowIn = { node: string; panel: string; locator: string }
 
 export type RelRows = {
@@ -71,8 +71,12 @@ export function modelFromRows(rows: RelRows): Model {
       ...(v.focus ? { focus: decodeFocus(v.focus) } : {}),
       ...(v.mode ? { mode: v.mode } : {}),
       ...(v.layout ? { layout: v.layout } : {}),
+      ...(v.dir ? { dir: v.dir } : {}),
+      ...(v.iso ? { iso: true } : {}),
     }
   }
+  // a view row named 'seed' pins the opening view (same role as `# view`)
+  const seed = seeds['seed'] || null
 
-  return makeModel({ entities, edges, refs, tours, ...(Object.keys(seeds).length ? { seeds } : {}) })
+  return makeModel({ entities, edges, refs, tours, ...(Object.keys(seeds).length ? { seeds } : {}), ...(seed ? { seed } : {}) })
 }

@@ -14,6 +14,7 @@ import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import expandCollapse from 'cytoscape-expand-collapse'
 import { buildModel, loadD2 } from './core/d2'
+import { modelFromRows } from './core/rows'
 import { lastSeg, parentOf } from './core/model'
 import { scc, topoTiers } from './core/tarjan'
 import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, identRefs, predecessors, reachableRefs, successors } from './core/views'
@@ -139,7 +140,9 @@ const DIRS = [['TB', '↓ TB'], ['LR', '→ LR'], ['BT', '↑ BT'], ['RL', '← 
 // toggle an id's membership in a focus set (shift/cmd-click)
 const toggleId = (ids, id) => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
 
-export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
+// Two model sources: `d2` text (compiled at runtime) or `rows` (RelRows JSON,
+// embedded by the build's atlas-db fence) -> core modelFromRows, no d2 needed.
+export default function AtlasPanel({ d2, rows, tours = {}, docs = {} }) {
   const cyEl = useRef(null)
   const cyRef = useRef(null)
   const anchorRef = useRef(null)   // 1px element placed at the hovered node (the only JS)
@@ -291,13 +294,12 @@ export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
   }
   const readAtlasURL = () => decodeAtlasState(new URLSearchParams(location.search).get('av'))
 
-  // build model + cytoscape once per d2 source
+  // build model + cytoscape once per model source (d2 text or rel rows)
   useEffect(() => {
     let alive = true
     ensureLayouts()
     ;(async () => {
-      const D2 = await ensureD2()
-      const model = await buildModel(d2, { D2 })
+      const model = rows ? modelFromRows(rows) : await buildModel(d2, { D2: await ensureD2() })
       if (!alive) return
       const { cyclic, comp } = scc(model.entities, model.edges)
       // d2-grid-style tiering: Kahn longest-path layer, then a stable column index
@@ -423,7 +425,7 @@ export default function AtlasPanel({ d2, tours = {}, docs = {} }) {
       }
     })()
     return () => { alive = false; cyRef.current?.destroy(); cyRef.current = null }
-  }, [d2])
+  }, [d2, rows])
 
   // narration hover -> light the matching node + its rows (core/bus.ts in action),
   // and answer with the ident's files (the periscope feed).

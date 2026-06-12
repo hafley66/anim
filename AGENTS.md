@@ -106,6 +106,28 @@ net.route -> net.nexthop
   graph and the atlas are two renderers over one model; the node id is the join
   key. One frame uses one right panel: atlas OR graph OR fs OR git.
 
+## Right panel — interactive atlas (from a database)
+
+The same atlas, but the model comes from relational rows instead of d2 text.
+Point the fence at a SQLite file (body unused):
+
+````markdown
+```atlas-db data/sprefa.sqlite
+```
+````
+
+At build time the `rel_*` tables are read (read-only) and embedded on the
+frame; the browser never opens a database. Tables (all optional except
+`rel_node`): `rel_node(id, kind, label)` · `rel_edge(f, t)` ·
+`rel_tag(node, ns, value)` · `rel_node_ref(node, panel, locator)` ·
+`rel_tour(id, title)` · `rel_tour_step(tour, seq, target, comment)` ·
+`rel_card(id, body)` · `rel_card_about(card, node)` ·
+`rel_view(id, focus, mode, layout, dir, iso)`. A view row with id `seed` pins
+the opening view. Target strings use the same encoding as `# tour` lines.
+`__`-prefixed columns are ignored, so a sprefa `dl` program that declares
+these rels (use `node_ref`, since `ref` is the engine's reserved span spine)
+writes a deck directly — see `sprefa/v5/examples/anim-deck.dl`.
+
 ## Right panel — graph (from a database)
 
 Render a SQL query result as a graph (DB opened **read-only**):

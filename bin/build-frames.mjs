@@ -95,6 +95,44 @@ function sqlToD2(dbRel, sql) {
   return s
 }
 
+// `atlas-db <db>` fence: load the anim rel_* tables (rel_node, rel_edge, rel_tag,
+// rel_tour, rel_tour_step, rel_card, rel_card_about, rel_view, rel_ref) from a
+// SQLite file at build time and embed them on the frame as RelRows JSON. The
+// browser never opens a database: AtlasPanel feeds the rows to core
+// modelFromRows. dl persists derived rels as rel_<name>, so a .dl program that
+// derives node/edge/tour rows IS a deck author. `__`-prefixed columns (engine
+// bookkeeping like __src) are stripped. Missing tables are simply absent keys;
+// no rel_node rows is an error.
+const REL_TABLES = [
+  ['nodes', 'rel_node'], ['edges', 'rel_edge'], ['tags', 'rel_tag'],
+  ['tours', 'rel_tour'], ['tour_steps', 'rel_tour_step'],
+  ['cards', 'rel_card'], ['card_about', 'rel_card_about'],
+  // `ref` is reserved in dl (the byte-span spine relation), so the deck's
+  // ref rows live in node_ref(node, panel, locator).
+  ['views', 'rel_view'], ['refs', 'rel_node_ref'],
+]
+function rowsFromDb(dbRel) {
+  if (!DatabaseSync) { console.error('atlas-db: node:sqlite unavailable (need Node 22.5+)'); return null }
+  const dbPath = path.resolve(root, dbRel)
+  if (!existsSync(dbPath)) { console.error(`atlas-db: db not found: ${dbRel}`); return null }
+  let out = {}
+  try {
+    const db = new DatabaseSync(dbPath, { readOnly: true })
+    const have = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name))
+    for (const [key, table] of REL_TABLES) {
+      if (!have.has(table)) continue
+      out[key] = db.prepare(`SELECT * FROM ${table}`).all().map((r) => {
+        const o = {}
+        for (const [k, v] of Object.entries(r)) if (!k.startsWith('__')) o[k] = typeof v === 'bigint' ? Number(v) : v
+        return o
+      })
+    }
+    db.close()
+  } catch (e) { console.error(`atlas-db: read failed for ${dbRel}: ${e.message}`); return null }
+  if (!out.nodes || !out.nodes.length) { console.error(`atlas-db: ${dbRel} has no rel_node rows`); return null }
+  return out
+}
+
 // `git: <repo> <rev> [count]` directive: read real `git log` ending at <rev>.
 // Stepping frames with an advancing rev makes commits slide in at the top.
 function resolveGitRef({ repo, rev, count }) {
@@ -182,6 +220,9 @@ export function parseFrames(md) {
       } else if (kind === 'atlas') {
         // interactive: keep the raw d2 on the frame; AtlasPanel parses it at runtime.
         cur.atlas = text
+      } else if (kind === 'atlas-db') {
+        // interactive from relational rows: ```atlas-db <db>``` (body ignored).
+        cur.atlasDb = parts[1]
       } else if (kind === 'sql-graph') {
         const gname = parts[1] || cur.title.replace(/\W+/g, '-').toLowerCase()
         graphs.push({ name: gname, kind: 'sql', db: parts[2], sql: text })
@@ -310,6 +351,11 @@ export function buildFrames() {
   }
   // resolve `git:` refs against the real repo
   for (const f of frames) if (f.gitRef) f.git = resolveGitRef(f.gitRef)
+  // resolve `atlas-db` fences: embed the rel_* rows on the frame
+  for (const f of frames) if (f.atlasDb) {
+    const rows = rowsFromDb(f.atlasDb)
+    if (rows) f.atlasRows = rows
+  }
   // resolve `doc:` refs: inline file text for the atlas code spotlight
   for (const f of frames) if (f.docRefs) {
     f.docs = {}
@@ -362,7 +408,8 @@ export function checkDeck() {
     const rel = path.relative(root, pf.file)
     for (const f of pf.frames) {
       const at = `${rel} › "${f.title}"`
-      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas) diags.push(`ERROR ${at}: empty frame`)
+      if (!(f.narration || '').trim() && !(f.code || '').trim() && !f.codeRef && !f.graph && !f.fs && !f.gitRef && !f.atlas && !f.atlasDb) diags.push(`ERROR ${at}: empty frame`)
+      if (f.atlasDb && !rowsFromDb(f.atlasDb)) diags.push(`ERROR ${at}: atlas-db ${f.atlasDb} did not load (see message above)`)
       if (f.graph) { const n = f.graph.replace(/^\//, '').replace(/\.svg$/, ''); if (!graphNames.has(n)) diags.push(`ERROR ${at}: graph "${n}" is never defined`) }
       if (f.codeRef && !resolveCodeRef(f.codeRef)) diags.push(`ERROR ${at}: code: ${f.codeRef} did not resolve`)
       for (const p of f.docRefs || []) if (!existsSync(path.resolve(root, p))) diags.push(`ERROR ${at}: doc: ${p} not found`)

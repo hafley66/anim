@@ -130,7 +130,8 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
 
   const hasCode = !!(f.code && f.code.trim())
   const hasGraph = !!f.graph
-  const hasRight = !!(f.graph || f.fs || f.git || f.atlas)
+  const hasAtlas = !!(f.atlas || f.atlasRows)
+  const hasRight = !!(f.graph || f.fs || f.git || hasAtlas)
   const html = useMemo(() => {
     // render [[other-slide]] cross-links as styled references
     const src = (f.narration || '').replace(/\[\[([^\]]+)\]\]/g, '<span class="xref">$1</span>')
@@ -151,7 +152,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
 
   return (
     <div className="stage">
-      <div className={`deck${hasRight ? '' : ' nograph'}${hasCode ? '' : ' nocode'}${f.atlas ? ' atlas-frame' : ''}`}>
+      <div className={`deck${hasRight ? '' : ' nograph'}${hasCode ? '' : ' nocode'}${hasAtlas ? ' atlas-frame' : ''}`}>
         <div className="left">
           <div className="head">
             <div className="counter">
@@ -161,9 +162,9 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
             <h2 className="title">{f.title}</h2>
           </div>
           <div ref={narrationRef} key={i}
-               className={`narration fade md${hasCode ? '' : ' grow'}${f.atlas && !more ? ' clamp' : ''}`}
+               className={`narration fade md${hasCode ? '' : ' grow'}${hasAtlas && !more ? ' clamp' : ''}`}
                dangerouslySetInnerHTML={{ __html: html }} />
-          {f.atlas && <button className="showmore" onClick={() => setMore(v => !v)}>{more ? 'show less ▲' : 'show more ▼'}</button>}
+          {hasAtlas && <button className="showmore" onClick={() => setMore(v => !v)}>{more ? 'show less ▲' : 'show more ▼'}</button>}
           {hasCode && (
             <div className="code" ref={codeWrapRef}>
               <ShikiMagicMove
@@ -193,7 +194,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
         </div>
         {hasRight && (
           <div className="right">
-            {f.atlas ? <AtlasPanel d2={f.atlas} docs={f.docs} />
+            {hasAtlas ? <AtlasPanel d2={f.atlas} rows={f.atlasRows} docs={f.docs} />
               : f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
               : f.fs ? <div className="fs-card"><FsTree tree={f.fs} /></div>
               : <Graph src={f.graph} lit={lit} />}

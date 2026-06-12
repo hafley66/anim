@@ -128,12 +128,17 @@ GenRule -> BodyItem
 GenRule -> GenTarget
 GenRule -> String
 GenRule -> Vec
+ProjectCx -> Fn
 ProjectCx -> HashMap
 ProjectCx -> HashSet
+ProjectCx -> KotlinIndex
 ProjectCx -> OnceLock
+ProjectCx -> Option
 ProjectCx -> Path
 ProjectCx -> RustCrates
+ProjectCx -> Send
 ProjectCx -> String
+ProjectCx -> Sync
 Rule -> AggFn
 Rule -> Atom
 Rule -> BodyItem
@@ -163,7 +168,7 @@ WhereBytes -> StringId
 # @ Desc : fan-out 4
 # @ Engine : fan-out 7
 # @ GenRule : fan-out 4
-# @ ProjectCx : fan-out 6
+# @ ProjectCx : fan-out 11
 # @ Rule : fan-out 5
 # @ WhereBytes : fan-out 5
 # END:
@@ -185,12 +190,14 @@ WhereBytes -> StringId
 # step DescKind = 2
 # step DiagRow = 0
 # step FileId = 1
+# step Fn = 0
 # step From = 1
 # step GenTarget = 2
 # step HashMap = 0
 # step HashSet = 0
+# step KotlinIndex = 0
 # step OnceLock = 0
-# step Option = 1
+# step Option = 0
 # step Path = 0
 # step PathBuf = 0
 # step RefCell = 2
@@ -199,8 +206,10 @@ WhereBytes -> StringId
 # step RevId = 1
 # step RustCrates = 0
 # step Segment = 2
+# step Send = 0
 # step String = 0
 # step StringId = 1
+# step Sync = 0
 # step Vec = 0
 # END:
 # step 0 : the heavy core lands first
@@ -215,6 +224,19 @@ WhereBytes -> StringId
 # src Coord = sprefa/v5/src/spine.rs:141
 # src WhereBytes = sprefa/v5/src/spine.rs:150
 # view focus=Engine mode=cone layout=elk dir=LR
+```
+
+## the atlas straight from the database
+
+No d2 at all this time. The fence below names a SQLite file and nothing else:
+the build reads the engine's `rel_node` / `rel_edge` / `rel_tag` /
+`rel_node_ref` / `rel_tour` / `rel_tour_step` / `rel_card` / `rel_view`
+tables and the panel renders them as a model. The `# tour`-shaped rows were
+written as datalog **facts**; the nodes, edges, tags, and file refs were
+**derived** from the type graph by the same rules. Press ▶ rows to walk the
+authored tour; hover a node for its declaration file in the periscope.
+
+```atlas-db data/sprefa.sqlite
 ```
 
 ## the loop you are inside

@@ -77,7 +77,7 @@ refactor (TypeScript via tsgo) extracted all of it:
 | transition.ts | wired: the round player + FsTree exit set go through diff/transitionViews |
 | cone (core/views.ts) | multi-focus base case (NodeId[]); AtlasPanel select() consumes it; shift/cmd-click grows the set |
 | codec.ts | ?av= payload incl. '+'-joined focus sets |
-| rows.ts | modelFromRows: the sqlite/rel_* loader, driver-agnostic |
+| rows.ts | modelFromRows: the sqlite/rel_* loader, driver-agnostic. WIRED end-to-end (2026-06-12): the `atlas-db <db>` fence embeds rel_* rows at build time (bin/build-frames rowsFromDb), AtlasPanel renders them (`rows` prop), and anim-deck.dl derives/authors the rows (`ref` is dl-reserved -> table is rel_node_ref; a view row id 'seed' pins the opening view) |
 | tests | vitest unit suites on core + playwright e2e (mount/rounds/cone/multi/elk/?av=) |
 
 ## Specced reps

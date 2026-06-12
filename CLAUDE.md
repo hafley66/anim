@@ -27,7 +27,9 @@ every atlas change and read the PNG back before claiming done.
   view/selection/step is computed purely in core and applied through cytoscape
   hooks. select() takes a focus SET (shift/cmd-click grows it). `window.__atlas`
   is the e2e hook. Named tours (model `# tour` lines + legacy prop) get ▶ buttons;
-  a span step opens CodeSpotlight over the graph.
+  a span step opens CodeSpotlight over the graph. Two model sources: `d2` text
+  (runtime compile) or `rows` (RelRows embedded by the build's `atlas-db` fence
+  -> core modelFromRows; the browser never opens a database).
 - `src/CodeSpotlight.jsx` — the document surface for span tour steps: file stays
   resident, the band top/height CSS-transitions between ranges (the FLIP), scroll
   eases to center it. Geometry from core/spotlight.ts; its LINE_H (18px) must
