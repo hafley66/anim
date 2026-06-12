@@ -137,7 +137,8 @@ e2e hook: window.__peri { hover(tok), state() }.
 
 ## Open
 
-- oxc JS/TS producer in dl
+- oxc JS/TS producer in dl: DONE 2026-06-12 (sprefa main: typegraph.rs ts_edges
+  via oxc_parser, %.ts/%.tsx wired into type_edge; .kts still routes to Kotlin)
 - one-world-per-deck vs adjacency lint (anim backlog, still unchosen)
 - native d2 syntax migration (per-fence d2 compile errors in npm run check:
   DONE 2026-06-12 via `d2 validate` per fence, kit-offset line numbers;
