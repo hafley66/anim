@@ -17,6 +17,7 @@
     "build:embed": "vite build --config vite.embed.config.js"
   },
   "dependencies": {
+    "@terrastruct/d2": "^0.1.33",
     "cytoscape": "^3.30.2",
     "cytoscape-dagre": "^2.5.0",
     "cytoscape-elk": "^2.3.0",

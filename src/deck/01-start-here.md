@@ -97,31 +97,31 @@ overlay: VXLAN {
   vxlan
   vtep
 }
-link: L2 {
+l2: L2 {
   ethernet
   mac
 }
 net.ip -> net.route
 net.route -> net.nexthop
 net.nexthop -> net.route
-net.nexthop -> link.ethernet
+net.nexthop -> l2.ethernet
 overlay.vxlan -> overlay.vtep
-overlay.vxlan -> link.ethernet
+overlay.vxlan -> l2.ethernet
 overlay.vtep -> net.ip
-link.ethernet -> link.mac
+l2.ethernet -> l2.mac
 
 # @ net.route : RIB lookup, longest-prefix match
 # @ net.nexthop : recursive resolution (the SCC)
 # src net.route = frr/zebra/zebra_rib.c:120
 # src net.nexthop = frr/zebra/zebra_nhg.c:88
-# src link.ethernet = linux/net/ethernet/eth.c:40
+# src l2.ethernet = linux/net/ethernet/eth.c:40
 # ref sql net.route = routes:dest=10.0.0.0/8
 # ref sql net.ip = addrs:ifindex=2
 # ref sql overlay.vtep = vteps:vni=4097
 # ref api net.nexthop = GET /v1/nexthops/{id}
 # ref api overlay.vxlan = POST /v1/overlays
 # tag net.nexthop : hub
-# tag link.mac : sink
+# tag l2.mac : sink
 # diff add overlay.vtep
 # diff mod net.route
 # view focus=overlay.vxlan mode=downstream dir=LR

@@ -1,7 +1,9 @@
-// core/d2.js — d2 text (+ `#` annotation comments) -> Model. WASM compiler with a
-// hand-written mini-parser fallback. No network unless you call loadD2().
+// core/d2.js — d2 text (+ `#` annotation comments) -> Model. The bundled
+// @terrastruct/d2 WASM compiler is the ONLY parser; on file:// the worker-shim
+// runs its compile worker on the main thread.
 
 import { entity, makeModel } from './model.js';
+import { installMainThreadWorkerShim } from './worker-shim.js';
 
 const lastSeg = id => id.includes('.') ? id.slice(id.lastIndexOf('.') + 1) : id;
 const parentOf = id => id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : 'root';
@@ -11,9 +13,10 @@ function dropContainers(nodes) {
   return nodes.filter(n => !isC(n.id));
 }
 
-// dynamic import kept out of module load so core stays network-free until asked.
-export async function loadD2(url = 'https://esm.sh/@terrastruct/d2') {
-  const m = await import(/* @vite-ignore */ url);
+// dynamic import so the ~8MB d2 chunk loads only when a graph asks for it.
+export async function loadD2() {
+  installMainThreadWorkerShim();   // no-op off file://
+  const m = await import('@terrastruct/d2');
   return m.D2;
 }
 
@@ -29,34 +32,25 @@ export async function parseD2WASM(text, D2) {
   return { nodes: dropContainers(nodes), edges, engine: 'wasm' };
 }
 
-export function miniParseD2(text) {
-  const nodes = new Map(), edges = []; const stack = []; let ei = 0;
-  const qual = k => stack.length ? stack.join('.') + '.' + k : k;
-  const ensure = (id, label) => { if (!nodes.has(id)) nodes.set(id, { id, name: label || lastSeg(id), mod: parentOf(id) }); return nodes.get(id); };
+// Prose-hover id scrape — NOT a d2 parser. Frames.jsx needs node ids
+// synchronously to wrap mentions in narration; the real model arrives async
+// from the WASM compiler. Bare idents and edge endpoints only.
+export function proseHoverIds(text) {
+  const map = new Map(); const stack = [];
   for (const raw of text.split('\n')) {
     const line = raw.replace(/#.*$/, '').trim();
     if (!line) continue;
     if (line === '}') { stack.pop(); continue; }
-    if (line.includes('->') && !line.includes('{')) {
-      // expand a chain a -> b -> c into a->b, b->c. A trailing ": label" (colon
-      // after the last node, not part of an arrow) applies to the final hop.
-      let body = line, label = '';
-      const ci = line.lastIndexOf(':');
-      if (ci > line.lastIndexOf('>')) { body = line.slice(0, ci).trim(); label = line.slice(ci + 1).trim().replace(/^["']|["']$/g, ''); }
-      const segs = body.split('->').map(s => qual(s.trim())).filter(Boolean);
-      if (segs.length >= 2) {
-        segs.forEach(s => ensure(s));
-        for (let i = 0; i < segs.length - 1; i++)
-          edges.push({ id: segs[i] + '>>' + segs[i + 1] + '#' + (ei++), source: segs[i], target: segs[i + 1], label: i === segs.length - 2 ? label : '' });
-        continue;
-      }
+    const open = line.match(/^([\w.\-]+)\s*(?::[^{]*)?\{$/);
+    if (open) { stack.push(open[1].trim()); continue; }
+    for (const seg of line.split('->')) {
+      const m = seg.trim().match(/^([\w.\-]+)/);
+      if (!m) continue;
+      const id = stack.length ? stack.join('.') + '.' + m[1] : m[1];
+      map.set(id.toLowerCase(), id); map.set(lastSeg(id).toLowerCase(), id);
     }
-    const cm = line.match(/^([\w.\-]+)\s*(?::\s*([^{]*?))?\s*\{$/);    // key { | key: label {
-    if (cm) { const k = cm[1].trim(); ensure(qual(k), (cm[2] || '').replace(/^["']|["']$/g, '').trim() || undefined); stack.push(k); continue; }
-    const nm = line.match(/^([\w.\-]+)\s*(?::\s*"?([^"]*)"?)?$/);      // key | key: label
-    if (nm) { const k = nm[1].trim(); ensure(qual(k), (nm[2] || '').trim() || undefined); }
   }
-  return { nodes: dropContainers([...nodes.values()]), edges, engine: 'mini' };
+  return map;
 }
 
 // `#` comment annotations the d2 compiler ignores but we scan.
@@ -83,9 +77,10 @@ export function parseAnnotations(text) {
   return { ann, annE, diff, src, srcE, tags, reflist };
 }
 
-// text -> Model. Pass {D2} to use the WASM compiler; omit for the mini-parser.
+// text -> Model via the WASM compiler. A compile failure yields an empty model
+// carrying the error in `note` — surfaced, never silently re-parsed.
 export async function buildModel(text, { D2 = null, tours = {} } = {}) {
-  let g; try { g = await parseD2WASM(text, D2); } catch (e) { g = miniParseD2(text); g.note = e.message; }
+  let g; try { g = await parseD2WASM(text, D2); } catch (e) { g = { nodes: [], edges: [], engine: 'none', note: e.message }; }
   const a = parseAnnotations(text);
   const entities = g.nodes.map(n => entity({
     id: n.id, label: n.name, container: n.mod, tags: a.tags[n.id] || [],

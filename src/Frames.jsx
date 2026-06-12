@@ -3,7 +3,7 @@ import { ShikiMagicMove } from 'shiki-magic-move/react'
 import { marked } from 'marked'
 import panzoom from 'panzoom'
 import AtlasPanel from './AtlasPanel.jsx'
-import { miniParseD2 } from './core/d2.js'
+import { proseHoverIds } from './core/d2.js'
 import { atlasBus, HOVER } from './atlas-bus.js'
 
 // One frame === one idea. Code and graph are both OPTIONAL: a frame can be pure
@@ -97,7 +97,7 @@ export default function Frames({ frames, highlighter, theme, glossary }) {
   // atlas node names mentioned in this frame's prose -> id to light on hover
   const atlasTokens = useMemo(() => {
     const map = new Map()
-    if (f.atlas) for (const n of miniParseD2(f.atlas).nodes) { map.set(n.id.toLowerCase(), n.id); if (n.name) map.set(n.name.toLowerCase(), n.id) }
+    if (f.atlas) for (const [k, id] of proseHoverIds(f.atlas)) map.set(k, id)
     return map
   }, [f.atlas])
 
