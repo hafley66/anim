@@ -6,3 +6,5 @@ src/frames.json
 src/glossary.json
 graphs/*.d2
 public/*.svg
+data/*.sqlite-shm
+data/*.sqlite-wal
