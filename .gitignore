@@ -8,3 +8,4 @@ graphs/*.d2
 public/*.svg
 data/*.sqlite-shm
 data/*.sqlite-wal
+test-results/

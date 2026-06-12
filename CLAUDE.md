@@ -9,6 +9,9 @@ cytoscape graph with derived side panels (fs/sql/api/...). To *author a deck*, r
 
 ```
 npm run dev          # vite dev server on http://localhost:5173/
+npm run typecheck    # tsgo --noEmit over src/core + e2e (core is TypeScript, strict)
+npm test             # vitest: src/core/*.test.ts (atlas/core is a symlink — vitest.config.ts scopes the include)
+npm run test:e2e     # playwright e2e (e2e/atlas.spec.ts; auto-starts/reuses the dev server)
 npm run shoot:atlas  # playwright screenshots -> shots/atlas-*.png (dev server MUST be up)
 npm run check        # build-frames in --check mode: compiler-style errors, fix in one pass
 npm run build        # vite build (cytoscape-elk is a LAZY import — never static, it breaks rollup)
@@ -20,17 +23,23 @@ every atlas change and read the PNG back before claiming done.
 
 ## Where things live
 
-- `src/AtlasPanel.jsx` — the interactive renderer (cytoscape init, theme read,
-  focus/cone lighting, the ref panels, toolbar). The main deliverable.
+- `src/AtlasPanel.jsx` — the interactive renderer, an ADAPTER over core: every
+  view/selection/step is computed purely in core and applied through cytoscape
+  hooks. select() takes a focus SET (shift/cmd-click grows it). `window.__atlas`
+  is the e2e hook.
 - `src/Frames.jsx` — the deck shell (markdown via `marked`, left code panel, slide nav).
-- `src/core/` — framework-neutral shared model (no React/DOM), imported by both the
-  static build and the atlas:
-  - `model.js` build the entity/edge/ref model · `d2.js` parse d2 + `#` annotations
-  - `tarjan.js` scc + `topoTiers` (longest-path layering, feeds the grid layout)
-  - `views.js` cone / `reachableRefs` · `transition.js` constancy primitive (UNUSED by AtlasPanel yet)
-  - `tree.js` flat refs -> nestable tree (`buildTree`, `toForest`, collapse single-child chains)
-  - `panels.js` how each panel kind segments a locator -> tree path
-  - `bus.js` event bus · `index.js` barrel
+- `src/core/` — framework-neutral shared model, TypeScript (strict, checked by
+  tsgo), imported by both the static build and the atlas:
+  - `model.ts` Entity/Edge/View/Model + Target/Tour types (Target, NOT Subject — RxJS owns Subject)
+  - `annotations.ts` all `#` comment parsing (`# @ / tag / diff / ref / src / step / view`)
+  - `tour.ts` THE sequencing concept: tourFromSteps/tourFromSequence/tourView
+  - `d2.ts` d2 text -> Model (attaches tours + seed) · `rows.ts` rel_* rows -> Model (sqlite loader, driver-agnostic)
+  - `tarjan.ts` scc + `topoTiers` · `layout.ts` tierCells/gridCell · `metrics.ts` betweenness heat
+  - `views.ts` cone(focus[]) / fullView / detailFor / `reachableRefs` · `transition.ts` constancy primitive (WIRED: round player + FsTree)
+  - `codec.ts` ?av= payload ('+'-joined focus sets)
+  - `tree.ts` flat refs -> nestable tree + `explorerRows` (fs lens rows)
+  - `panels.ts` how each panel kind segments a locator -> tree path
+  - `bus.ts` event bus · `index.ts` barrel
 - `src/app.css` — `:root { --atlas-* }` is the SINGLE theme source. The canvas can't
   use `var()`; it reads tokens via `getComputedStyle` (`readTheme()` in AtlasPanel).
   DOM uses `var(--atlas-*)` directly. Change a color in one place.

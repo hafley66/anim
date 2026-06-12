@@ -3,7 +3,9 @@ import { ShikiMagicMove } from 'shiki-magic-move/react'
 import { marked } from 'marked'
 import panzoom from 'panzoom'
 import AtlasPanel from './AtlasPanel.jsx'
-import { proseHoverIds } from './core/d2.js'
+import { proseHoverIds } from './core/d2'
+import { diff } from './core/transition'
+import { explorerRows } from './core/tree'
 import { atlasBus, HOVER } from './atlas-bus.js'
 
 // One frame === one idea. Code and graph are both OPTIONAL: a frame can be pure
@@ -271,25 +273,12 @@ function GitLens({ commits }) {
   )
 }
 
-// Build ordered explorer rows (dirs + files) from a flat path list.
-function buildRows(items) {
-  const all = new Map()
-  for (const { path, mark } of items) {
-    const clean = path.replace(/\/$/, '')
-    const parts = clean.split('/')
-    for (let k = 1; k < parts.length; k++) { const d = parts.slice(0, k).join('/'); if (!all.has(d)) all.set(d, { path: d, isDir: true, mark: '' }) }
-    all.set(clean, { path: clean, isDir: path.endsWith('/') || (all.get(clean)?.isDir ?? false), mark })
-  }
-  return [...all.values()]
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-    .map((n) => ({ key: n.path, depth: n.path.split('/').length - 1, name: n.path.split('/').pop(), isDir: n.isDir, mark: n.mark }))
-}
-
 // FS lens: a file-explorer view that FLIP-animates between frames. Rows present in
 // both frames slide to their new position; new rows fade in; removed rows fade out.
 // Same keyed-FLIP idea as magic-move (token keys) and d2 (node ids) — here, path keys.
+// Rows come from core/tree explorerRows; the exit set from core/transition diff.
 function FsTree({ tree }) {
-  const rows = useMemo(() => buildRows(tree), [tree])
+  const rows = useMemo(() => explorerRows(tree), [tree])
   const wrapRef = useRef(null)
   const rects = useRef(new Map())
   const prevRows = useRef([])
@@ -299,8 +288,8 @@ function FsTree({ tree }) {
 
   useEffect(() => {
     const wrap = wrapRef.current
-    const nextKeys = new Set(rows.map((r) => r.key))
-    const gone = prevRows.current.filter((r) => !nextKeys.has(r.key))
+    const d = diff(prevRows.current.map((r) => r.key), rows.map((r) => r.key))
+    const gone = prevRows.current.filter((r) => d.exit.has(r.key))
     if (gone.length && wrap) {
       const top = wrap.getBoundingClientRect().top - wrap.scrollTop
       setExiting(gone.map((r) => ({ ...r, y: (rects.current.get(r.key)?.top ?? 0) - top })))
