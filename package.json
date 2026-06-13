@@ -15,6 +15,7 @@
     "shoot": "node bin/shoot.mjs",
     "shoot:atlas": "node bin/shoot-atlas.mjs",
     "build:embed": "vite build --config vite.embed.config.js",
+    "build:deck": "node bin/build-frames.mjs && vite build --config vite.deck.config.js",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"

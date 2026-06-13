@@ -4,6 +4,7 @@ shots/
 # generated from the deck by bin/build-frames.mjs
 src/frames.json
 src/glossary.json
+src/map-svg.json
 graphs/*.d2
 public/*.svg
 data/*.sqlite-shm

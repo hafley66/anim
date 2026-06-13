@@ -11,6 +11,7 @@ import { explorerRows } from './core/tree'
 import type { ExplorerRow } from './core/tree'
 import type { Anchor, Frame, FsItem, GitCommit } from './deck'
 import { atlasBus, HOVER, PERISCOPE } from './atlas-bus'
+import mapSvg from './map-svg.json'
 
 // One frame === one idea. Code and graph are both OPTIONAL: a frame can be pure
 // prose (a durable discussion note), prose + code, prose + graph, or all three.
@@ -218,7 +219,7 @@ export default function Frames({ frames, highlighter, theme, glossary }: FramesP
               : f.git ? <div className="fs-card"><GitLens commits={f.git} /></div>
               : f.fs ? <div className="fs-card"><FsTree tree={f.fs} /></div>
               : spotSpan ? <div className="spot-card"><CodeSpotlight docs={f.docs} span={spotSpan} highlighter={highlighter} /></div>
-              : <Graph src={f.graph} lit={lit} />}
+              : <Graph src={f.graph} svg={f.graphSvg} lit={lit} />}
           </div>
         )}
       </div>
@@ -416,18 +417,12 @@ function MapView({ current, onJump, onClose }: { current: number; onJump: (idx: 
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
-    let alive = true
-    fetch('/_map.svg')
-      .then((r) => r.text())
-      .then((txt) => {
-        if (!alive) return
-        el.innerHTML = txt
-        el.querySelectorAll('a').forEach((a) => {
-          const href = a.getAttribute('href') || a.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || ''
-          if (href === `#${current}`) a.classList.add('map-here')
-        })
-      })
-    return () => { alive = false }
+    // the map SVG is inlined at build (src/map-svg.json) — no fetch, file:// safe
+    el.innerHTML = mapSvg.svg
+    el.querySelectorAll('a').forEach((a) => {
+      const href = a.getAttribute('href') || a.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || ''
+      if (href === `#${current}`) a.classList.add('map-here')
+    })
   }, [current])
 
   const onClick = (e: React.MouseEvent) => {
@@ -455,7 +450,7 @@ function MapView({ current, onJump, onClose }: { current: number; onJump: (idx: 
 // wrap it in panzoom for scroll-zoom + drag-pan. The pan target is stable across
 // frames, so your zoom/pan persists; the fade is opacity-only so it never fights
 // the panzoom transform.
-function Graph({ src, lit }: { src: string | null; lit: string[] | null }) {
+function Graph({ src, svg, lit }: { src: string | null; svg?: string; lit: string[] | null }) {
   const panRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(0)
@@ -472,19 +467,20 @@ function Graph({ src, lit }: { src: string | null; lit: string[] | null }) {
     const el = svgRef.current
     if (!el || !src) return
     let alive = true
-    fetch(src)
-      .then((r) => r.text())
-      .then((txt) => {
-        if (!alive) return
-        el.innerHTML = txt
-        el.querySelectorAll('path').forEach((p) => p.setAttribute('pathLength', '1'))
-        el.classList.remove('graph-anim')
-        void el.offsetWidth
-        el.classList.add('graph-anim')
-        setReady((n) => n + 1)
-      })
+    const mount = (txt: string) => {
+      if (!alive) return
+      el.innerHTML = txt
+      el.querySelectorAll('path').forEach((p) => p.setAttribute('pathLength', '1'))
+      el.classList.remove('graph-anim')
+      void el.offsetWidth
+      el.classList.add('graph-anim')
+      setReady((n) => n + 1)
+    }
+    // built frames carry the SVG inline (file:// safe); fetch is the dev fallback
+    if (svg) mount(svg)
+    else fetch(src).then((r) => r.text()).then(mount)
     return () => { alive = false }
-  }, [src])
+  }, [src, svg])
 
   // light the graph node(s) whose label matches an anchor's targets
   useEffect(() => {

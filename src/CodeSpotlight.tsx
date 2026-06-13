@@ -21,7 +21,7 @@ const LANG_BY_EXT: Record<string, string> = {
   sql: 'sql', sh: 'bash', bash: 'bash', json: 'json', toml: 'toml', yaml: 'yaml', yml: 'yaml',
   md: 'markdown', css: 'css', html: 'html', d2: 'text', dl: 'prolog',
 }
-const langOf = (file: string) => LANG_BY_EXT[file.split('.').pop()!.toLowerCase()] || 'text'
+export const langOf = (file: string) => LANG_BY_EXT[file.split('.').pop()!.toLowerCase()] || 'text'
 
 type Token = { content: string; color?: string }
 

@@ -12,6 +12,7 @@ export type Frame = {
   lang: string
   code: string
   graph: string | null
+  graphSvg?: string
   chapter?: string
   chapterSlug?: string
   links?: string[]

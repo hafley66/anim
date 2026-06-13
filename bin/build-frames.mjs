@@ -28,6 +28,7 @@ const OUT = path.join(root, 'src/frames.json')
 const KIT = path.join(root, 'src/kit.d2')
 const GLOSS = path.join(root, 'src/glossary.md')
 const GLOSS_OUT = path.join(root, 'src/glossary.json')
+const MAP_OUT = path.join(root, 'src/map-svg.json')
 const GRAPHS = path.join(root, 'graphs')
 const PUBLIC = path.join(root, 'public')
 
@@ -386,6 +387,17 @@ export function buildFrames() {
       console.error(`d2 failed for ${g.name}: ${e.message}`)
     }
   }
+  // inline rendered SVGs: f.graphSvg per frame + src/map-svg.json for MapView.
+  // The app never fetches at runtime, so the built deck works from file://.
+  const svgOf = (name) => {
+    const p = path.join(PUBLIC, `${name}.svg`)
+    return existsSync(p) ? readFileSync(p, 'utf8') : null
+  }
+  for (const f of frames) if (f.graph) {
+    const s = svgOf(f.graph.replace(/^\//, '').replace(/\.svg$/, ''))
+    if (s) f.graphSvg = s
+  }
+  writeFileSync(MAP_OUT, JSON.stringify({ svg: svgOf('_map') || '' }) + '\n')
   writeFileSync(OUT, JSON.stringify(frames, null, 2) + '\n')
   // glossary: `term :: definition` lines -> {term: def}, hover cards in the app
   const gloss = {}

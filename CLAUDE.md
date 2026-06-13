@@ -15,7 +15,17 @@ npm run test:e2e     # playwright e2e (e2e/atlas.spec.ts; auto-starts/reuses the
 npm run shoot:atlas  # playwright screenshots -> shots/atlas-*.png (dev server MUST be up)
 npm run check        # build-frames in --check mode: compiler-style errors, fix in one pass
 npm run build        # vite build (cytoscape-elk is a LAZY import — never static, it breaks rollup)
+npm run build:deck   # ONE self-contained dist/deck.html that opens from file:// (no server)
 ```
+
+`build:deck` exists because the module build can't run on file:// (module-script
+CORS). It folds everything into one inline classic script: d2 + shiki wasm ride
+base64-inlined, graph SVGs are embedded at build (`f.graphSvg` +
+`src/map-svg.json` — the app never fetches at runtime), and main.tsx imports
+shiki FINE-GRAINED (`shiki/core` + explicit `shiki/langs/*` in `LANG_IMPORTS`).
+Never import the bundled `shiki` entry there: `inlineDynamicImports` would fold
+all ~200 grammars into deck.html. A new deck lang/doc extension needs a
+matching `LANG_IMPORTS` entry or it renders plain (console.warn says which).
 
 `shoot:atlas` is the verification gate: it steps to the atlas frame, captures
 seed/focus/elk-layout/full-screen, and FAILS on any console error. Re-shoot after
