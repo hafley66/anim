@@ -193,6 +193,9 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})   // whole-panel fold (fs/sql/api/detail)
   const [tour, setTour] = useState<{ name: string | null; step: number }>({ name: null, step: -1 })
   const [litRow, setLitRow] = useState<string | null>(null)
+  // the focused entity ids, mirrored into the FS tree: rows whose id is in the
+  // set render bright, the rest stay faint (the always-present context list).
+  const [focusLit, setFocusLit] = useState<Set<string>>(new Set())
   const [full, setFull] = useState(false)   // click-into: same instance, full-screen
   const [stepUI, setStepUI] = useState<{ n: number; cap: string } | null>(null) // round player, or null when no steps
   const [heat, setHeat] = useState(false)   // graphology betweenness coloring
@@ -207,13 +210,18 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   const showSpot = (v: Spot | null) => { S.current.spot = v; setSpot(v) }
   const stepTourRef = useRef<((name: string, dir: number) => void) | null>(null)
 
-  const setRefsFromView = (ids: Set<string>) => {
-    const view = { entityIds: ids }, rbp: Record<string, TreeNode> = {}
+  // `treeIds` is what the FS tree lists (the visible set — full graph, or the
+  // isolated cone when iso is on); `lit` is the subset to render bright. Default
+  // lit = empty, so with nothing selected the whole list shows faint.
+  const setRefsFromView = (treeIds: Set<string>, lit?: Set<string>) => {
+    const view = { entityIds: treeIds }, rbp: Record<string, TreeNode> = {}
     for (const k of panelKeysOf(S.current.model)) {            // panels derived from the refs
       rbp[k] = buildTree(reachableRefs(S.current.model, view, k), pathOfFor(k))
     }
     setRefsByPanel(rbp)
+    setFocusLit(lit || new Set())
   }
+  const allEntityIds = () => new Set(S.current.model.entities.map(e => e.id))
 
   // hop superscripts for a focus set: nearest distance (by |hops|) wins.
   function labelDist(cy: Cy, focusIds: string[], keepIds: Set<string>) {
@@ -270,7 +278,9 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     if (S.current.isolate) cy.elements().difference(keep).addClass('iso-hide')
     labelDist(cy, ids, v.entityIds)
     cy.animate({ fit: { eles: keep, padding: 60 } }, { duration: 300 })
-    setRefsFromView(v.entityIds)
+    // FS lists the whole graph (or the iso cone) and lights the focused cone,
+    // mirroring the canvas's faded-context / bright-focal split.
+    setRefsFromView(S.current.isolate ? v.entityIds : allEntityIds(), v.entityIds)
     setDetail(detailFor(model, ids[ids.length - 1]))
     S.current.focus = ids
     syncURL()
@@ -281,7 +291,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide')
     cy.nodes().forEach((n: any) => n.data('lbl', n.data('name')))
     cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 300 })
-    setRefsFromView(S.current.view ? S.current.view.entityIds : new Set<string>(cy.nodes().map((n: any) => n.id())))
+    setRefsFromView(allEntityIds())   // full list, nothing lit -> all faint
     setDetail(null); S.current.focus = []
     syncURL()
   }
@@ -445,10 +455,10 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
         if (S.current.layoutName === 'elk') await ensureElk()
         relayout()
         if (seed.focus && seed.focus.length) select(seed.focus)
-        else setRefsFromView(new Set(model.entities.map(e => e.id)))
+        else setRefsFromView(allEntityIds())
       } else {
         relayout()
-        setRefsFromView(new Set(model.entities.map(e => e.id)))
+        setRefsFromView(allEntityIds())
       }
       if (S.current.roundTour) setStepTo(0)   // start the round player at round 0
       // e2e hook: canvas classes aren't queryable from the DOM, so the playwright
@@ -512,6 +522,10 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     const { paddingLeft, ...rest } = style
     const d = node.data, branch = !node.isLeaf, id = d.ids && d.ids[0]
     const lit = d.ids && d.ids.includes(litRow)
+    // focus lighting: a leaf is lit if its id is focused; a folder is lit if any
+    // descendant leaf is. Empty focus set -> nothing lit -> the list reads faint.
+    const anyLit = (n: any): boolean => (n.ids || []).some((x: string) => focusLit.has(x)) || (n.children || []).some(anyLit)
+    const inFocus = focusLit.size > 0 && anyLit(d)
     // rows: every row shows its own slice. stacked: only branches, drawn as one
     // horizontal stacked bar of their children (each segment = child.share).
     const on = spec.bar && barMode !== 'off'
@@ -519,7 +533,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     const stackBar = on && barMode === 'stacked' && branch && d.children
     return (
       <div style={rest} title={d.title}
-           className={`trow ${branch ? 'branch' : 'leaf'}${lit ? ' hot' : ''}`}
+           className={`trow ${branch ? 'branch' : 'leaf'}${lit ? ' hot' : ''}${inFocus ? ' focus-lit' : ' faint'}`}
            onClick={() => branch ? node.toggle() : (id && select([id]))}
            onMouseEnter={() => d.ids && d.ids.forEach((x: string) => hot(x, true))}
            onMouseLeave={() => d.ids && d.ids.forEach((x: string) => hot(x, false))}>
