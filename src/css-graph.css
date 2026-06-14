@@ -16,6 +16,8 @@
 /* ── NODES ─────────────────────────────────────────────────────────────── */
 .cssg-node {
   position: absolute; top: 0; left: 0;
+  z-index: 2;     /* paint nodes ABOVE edges (z-index:1) so the border covers the wire
+                     ends + arrow tip instead of the wire drawing on top of the border */
   display: inline-flex; align-items: center; justify-content: center; gap: 3px;
   padding: 5px 12px; min-height: 24px;
   font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
@@ -109,11 +111,18 @@
 .cssg-edge .cssg-wire { fill: none; stroke: var(--wire); stroke-width: 1.6;
   stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .cssg-edge .cssg-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
-/* arrow: tip sits at the target port (border midpoint), rotated into the node */
+/* arrow: tip sits at the SOURCE port (border midpoint), pointing into the source
+   node -- `a -> b` = "a rides on b", so the head points back at a, up the stack.
+   left/top (--ax/--ay) are set in JS to the same normalized point as the wire's source
+   endpoint: CSS anchor() from this nested element resolves unreliably (falls back to the
+   box corner), so the arrow and the line would otherwise drift apart. */
 .cssg-edge .cssg-arrow {
   position: absolute; width: 9px; height: 9px; overflow: visible;
-  top: anchor(var(--b) center); left: anchor(var(--b) center);
-  transform: translate(-50%, -50%) rotate(var(--arot, 0deg));
+  left: var(--ax, 50%); top: var(--ay, 50%);
+  /* the path tip is at viewBox 10,5 = the element's right-center (100% 50%); pin THAT
+     to (--ax,--ay) and rotate around it so the tip sits on the border, body outside */
+  transform-origin: 100% 50%;
+  transform: translate(-100%, -50%) rotate(var(--arot, 0deg));
 }
 .cssg-edge .cssg-arrow path { fill: var(--wire); }
 .cssg-edge.faded { opacity: .2; }

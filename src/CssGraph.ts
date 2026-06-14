@@ -73,10 +73,10 @@ const SIDES: Side[] = ['t', 'b', 'l', 'r']
 const portName = (id: string, s: Side) => cssName(id) + '__' + s
 const DRAG_DEAD = 4   // px the pointer must travel before a press becomes a pan/drag (kills touchiness)
 
-// outward unit normal of each side (box-local, y-down); the bezier leaves a port along it.
+// outward unit normal of each side (box-local, y-down); the bezier leaves a port along it
+// (and the arrow's tip is pushed out along it). The arrow's ANGLE is computed from the
+// curve in runEdges, not a fixed per-side rotation -- base arrow svg points +x (right).
 const NORMAL: Record<Side, [number, number]> = { t: [0, -1], b: [0, 1], l: [-1, 0], r: [1, 0] }
-// arrow points along the travel direction = INTO the node = opposite the target side's outward normal.
-const AROT: Record<Side, number> = { l: 0, r: 180, t: 90, b: 270 }   // base arrow svg points +x (right)
 
 function matchSel(e: Ele, sel?: string): boolean {
   if (!sel) return true
@@ -160,7 +160,7 @@ export class CssGraph implements GraphBackend {
     this.viewport = document.createElement('div'); this.viewport.className = 'cssg-viewport'
     this.world = document.createElement('div'); this.world.className = 'cssg-world'
     this.viewport.appendChild(this.world); this.host.appendChild(this.viewport)
-    // arrowheads are per-edge <svg class="cssg-arrow"> anchored to the target port
+    // arrowheads are per-edge <svg class="cssg-arrow"> anchored to the source port
     // (not a shared marker): the wire svg uses preserveAspectRatio=none, which would
     // distort any marker drawn inside it.
     this.bindInput()
@@ -302,14 +302,21 @@ export class CssGraph implements GraphBackend {
   // ── edge geometry: pick two discrete ports, let CSS anchor() size the box ──────
   // For each edge we choose the source/target SIDE (the one facing the other node)
   // and tether the box to those two port anchors in CSS (the bbox of the two ports).
-  // The wire is a normalized 0..100 bezier (stretched, non-scaling stroke) leaving each
-  // port along its outward normal; the arrow is a separate svg, rotated by the target
-  // side alone (discrete ports => no atan2). No px / offsetWidth reads here.
+  // The wire is a 0..100 bezier (stretched, non-scaling stroke) leaving each port along
+  // its outward normal; the arrow is a separate svg at the SOURCE port, rotated by the
+  // source side (discrete ports => no atan2).
+  //
+  // Two passes: write every --a/--b/--arot first, then read back the (now anchor-sized)
+  // box + the real port positions to place the wire endpoints. The wire MUST come from
+  // the same DOM positions as the box/arrow -- deriving the box corner from _pos centers
+  // flips to the wrong corner when two nodes are nearly axis-aligned (stale _pos.w), so
+  // the line and the anchored arrow drift apart.
   private scheduleFlips() { if (!this.flipQueued) { this.flipQueued = true; requestAnimationFrame(() => this.runEdges()) } }
   private runEdges() {
     this.flipQueued = false
     const K = 45   // control-point offset in the 0..100 box (curve bulge)
-    for (const eid of this.edgeIds) {
+    const pending: { e: Ele; src: Side; tgt: Side; sp: HTMLElement; tp: HTMLElement }[] = []
+    for (const eid of this.edgeIds) {                  // pass 1: choose ports, write the anchors
       const e = this.byId.get(eid)!, a = this.byId.get(e._data.source), b = this.byId.get(e._data.target)
       if (!a?._pos || !b?._pos) continue
       let src: Side, tgt: Side
@@ -320,19 +327,44 @@ export class CssGraph implements GraphBackend {
         const dx = bc.x - ac.x, dy = bc.y - ac.y
         if (Math.abs(dx) >= Math.abs(dy)) { src = dx >= 0 ? 'r' : 'l'; tgt = dx >= 0 ? 'l' : 'r' }
         else { src = dy >= 0 ? 'b' : 't'; tgt = dy >= 0 ? 't' : 'b' }
-        // A at one box corner, B at the diagonal corner (collapses to an edge when colinear)
-        const ax = ac.x <= bc.x ? 0 : 100, ay = ac.y <= bc.y ? 0 : 100, bx = 100 - ax, by = 100 - ay
-        const c1 = `${ax + NORMAL[src][0] * K},${ay + NORMAL[src][1] * K}`
-        const c2 = `${bx + NORMAL[tgt][0] * K},${by + NORMAL[tgt][1] * K}`
-        const d = `M${ax},${ay} C${c1} ${c2} ${bx},${by}`
-        for (const p of e.el.querySelectorAll('.cssg-wire-svg path')) p.setAttribute('d', d)
-      }
-      if (a === b) {                                   // a small loop in the corner box
-        for (const p of e.el.querySelectorAll('.cssg-wire-svg path')) p.setAttribute('d', 'M0,100 C60,100 100,60 100,0')
       }
       e.el.style.setProperty('--a', portName(a.id(), src))
       e.el.style.setProperty('--b', portName(b.id(), tgt))
-      e.el.style.setProperty('--arot', AROT[tgt] + 'deg')
+      // (--arot is set in pass 2: it follows the curve's actual direction, not the side)
+      const sp = a.el.querySelector('.cssg-port.' + src) as HTMLElement | null
+      const tp = b.el.querySelector('.cssg-port.' + tgt) as HTMLElement | null
+      if (sp && tp) pending.push({ e, src, tgt, sp, tp })
+    }
+    for (const { e, src, tgt, sp, tp } of pending) {   // pass 2: read DOM, place the wire
+      const box = e.el.getBoundingClientRect()
+      const norm = (el: HTMLElement) => {              // a port's center as 0..100 within the box
+        const r = el.getBoundingClientRect()
+        return { x: box.width ? ((r.left + r.width / 2) - box.left) / box.width * 100 : 50,
+                 y: box.height ? ((r.top + r.height / 2) - box.top) / box.height * 100 : 50 }
+      }
+      const S = norm(sp), T = norm(tp)
+      const C1 = { x: S.x + NORMAL[src][0] * K, y: S.y + NORMAL[src][1] * K }
+      const C2 = { x: T.x + NORMAL[tgt][0] * K, y: T.y + NORMAL[tgt][1] * K }
+      const d = `M${S.x},${S.y} C${C1.x},${C1.y} ${C2.x},${C2.y} ${T.x},${T.y}`
+      for (const p of e.el.querySelectorAll('.cssg-wire-svg path')) p.setAttribute('d', d)
+      // arrow rides the SAME normalized source point as the wire (see css note), pulled
+      // OUTWARD by GAP px along the side normal so the whole head sits outside the node
+      // box. Its angle FOLLOWS THE CURVE: sample the bezier a short way in and point the
+      // head back along that direction (in screen space, so the box stretch is undone) --
+      // a rigid side-normal angle kinks against a curve that departs toward an off-axis
+      // target. CSS pins the arrow's TIP (its 100% 50% corner) to (--ax,--ay), rotates around it.
+      const arrow = e.el.querySelector('.cssg-arrow') as HTMLElement | null
+      if (arrow) {
+        const GAP = 3   // clearance between the arrow tip and the node border
+        const t = 0.18, u = 1 - t                        // a point just along the wire from the source
+        const px = u * u * u * S.x + 3 * u * u * t * C1.x + 3 * u * t * t * C2.x + t * t * t * T.x
+        const py = u * u * u * S.y + 3 * u * u * t * C1.y + 3 * u * t * t * C2.y + t * t * t * T.y
+        const dirX = (px - S.x) * box.width / 100, dirY = (py - S.y) * box.height / 100   // screen-space
+        const arot = Math.atan2(-dirY, -dirX) * 180 / Math.PI                              // point back into the node
+        arrow.style.setProperty('--arot', arot.toFixed(1) + 'deg')
+        arrow.style.setProperty('--ax', `calc(${S.x}% + ${(NORMAL[src][0] * GAP).toFixed(2)}px)`)
+        arrow.style.setProperty('--ay', `calc(${S.y}% + ${(NORMAL[src][1] * GAP).toFixed(2)}px)`)
+      }
     }
   }
 

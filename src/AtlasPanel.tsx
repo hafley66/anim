@@ -152,18 +152,20 @@ function buildCyStyle(t: ReturnType<typeof readTheme>): any[] {
   { selector: 'node.hot', style: { 'background-color': t.hot, 'border-color': t.hotBorder, 'color': '#1e293b' } },     // cross-lit
   // context: desaturate to a gray scaffold but keep the label READABLE (mid-slate text)
   { selector: 'node.faded', style: { 'opacity': t.ctxOpacity, 'background-color': t.ctxFill, 'border-color': t.ctxBorder, 'color': t.ctxText } },
-  { selector: 'edge.faded', style: { 'opacity': 0.12, 'line-color': t.ctxBorder, 'target-arrow-color': t.ctxBorder } },
+  { selector: 'edge.faded', style: { 'opacity': 0.12, 'line-color': t.ctxBorder, 'source-arrow-color': t.ctxBorder } },
   { selector: '.iso-hide', style: { 'display': 'none' } },
   { selector: '.step-hide', style: { 'display': 'none' } },                                  // not yet revealed by the round player
   { selector: 'node.step-new', style: { 'border-width': 4, 'border-color': '#16a34a', 'background-color': '#dcfce7', 'color': '#14532d', 'z-index': 80 } }, // derived THIS round
-  { selector: 'edge', style: { 'width': 1.4, 'line-color': t.edge, 'target-arrow-color': t.edge,
-    'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
+  // arrowhead sits at the SOURCE end (points up the stack, toward the dependent):
+  // `a -> b` = "a rides on b", so the head points back at a, not at the dependency b.
+  { selector: 'edge', style: { 'width': 1.4, 'line-color': t.edge, 'source-arrow-color': t.edge,
+    'source-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': 0.9 } },
   // edges that carry a # @ a -> b note get a dashed line + an ⓘ badge: a "hover me" cue.
   { selector: 'edge[?hasNote]', style: { 'line-style': 'dashed', 'label': 'ⓘ', 'font-size': 12,
     'color': '#64748b', 'text-background-color': '#ffffff', 'text-background-opacity': 0.92, 'text-background-padding': 2 } },
-  { selector: 'edge.hl-in',  style: { 'line-color': t.edgeIn, 'target-arrow-color': t.edgeIn, 'width': 2.4, 'opacity': 1 } },
-  { selector: 'edge.hl-out', style: { 'line-color': t.edgeOut, 'target-arrow-color': t.edgeOut, 'width': 2.4, 'opacity': 1 } },
-  { selector: 'edge.hl-note', style: { 'line-color': '#6366f1', 'target-arrow-color': '#6366f1',
+  { selector: 'edge.hl-in',  style: { 'line-color': t.edgeIn, 'source-arrow-color': t.edgeIn, 'width': 2.4, 'opacity': 1 } },
+  { selector: 'edge.hl-out', style: { 'line-color': t.edgeOut, 'source-arrow-color': t.edgeOut, 'width': 2.4, 'opacity': 1 } },
+  { selector: 'edge.hl-note', style: { 'line-color': '#6366f1', 'source-arrow-color': '#6366f1',
     'line-style': 'solid', 'width': 2.6, 'color': '#4338ca', 'font-size': 15, 'z-index': 50, 'opacity': 1 } },
   // hover preview: the cone a click WOULD light, rendered slightly weaker than a commit
   { selector: 'node.preview', style: { 'background-opacity': 0.78, 'border-opacity': 0.85 } },
