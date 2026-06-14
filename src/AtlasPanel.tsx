@@ -13,7 +13,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import expandCollapse from 'cytoscape-expand-collapse'
-import { CssGraph } from './CssGraph'
+import { CssGraph, type GraphBackend, type ExpandCollapse } from './CssGraph'
 import './css-graph.css'
 import { buildModel, loadD2 } from './core/d2'
 import { modelFromRows } from './core/rows'
@@ -41,7 +41,7 @@ import type { PanelSpec } from './core/panels'
 // cytoscape collections/events flow through as `any`: this adapter touches the
 // plugin-extended surface (expand-collapse, style maps) that @types/cytoscape
 // doesn't model. The pure side stays fully typed via core/.
-type Cy = any
+type Cy = GraphBackend   // the render-backend contract (cytoscape Core subset); CssGraph satisfies it
 type Spot = { span: Span; comment?: string }
 type PanelState = {
   // model/adj are set once by the build effect before any handler can run;
@@ -56,7 +56,7 @@ type PanelState = {
   rankDir: string
   noteOf: Map<string, string | undefined>
   cy?: Cy
-  ec?: Cy
+  ec?: ExpandCollapse
   roundTour?: Tour | null
   step?: number
   maxTier?: number
@@ -191,7 +191,7 @@ export type AtlasPanelProps = {
 
 export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighter }: AtlasPanelProps) {
   const cyEl = useRef<HTMLDivElement>(null)
-  const cyRef = useRef<Cy>(null)
+  const cyRef = useRef<Cy | null>(null)
   const anchorRef = useRef<HTMLDivElement>(null)   // 1px element placed at the hovered node (the only JS)
   const tipRef = useRef<HTMLDivElement>(null)      // native popover; CSS anchors it above the node
   const S = useRef<PanelState>({ model: null as unknown as Model, adj: null as unknown as Adj, view: null, focus: [], mode: 'cone', isolate: false, layoutName: 'dagre', rankDir: 'TB', noteOf: new Map() })
@@ -256,7 +256,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // visibility changes (round player / reset) go through the transition primitive:
   // enter/exit toggle .step-hide, kept elements are NEVER recreated.
   function applyView(next: View) {
-    const { cy } = S.current
+    const cy = S.current.cy!
     cy.batch(() => {
       transitionViews(S.current.view, next, {
         enterNode: id => { const n = cy.$id(id); if (!n.data('grp')) n.removeClass('step-hide') },
@@ -274,7 +274,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // one painter. `iso` hides the non-cone. `preview` marks the lit set with the
   // `preview` class (rendered dimmer) and never isolates. Returns the cone + kept.
   function paintCone(ids: string[], iso: boolean, preview: boolean) {
-    const { cy, model, adj, mode } = S.current
+    const { model, adj, mode } = S.current, cy = S.current.cy!
     const v = cone(model, ids, mode as ConeMode, adj)
     const keepN = cy.nodes().filter((n: any) => v.entityIds.has(n.id()))
     const keepE = cy.edges().filter((e: any) => v.edgeIds.has(e.id()))
@@ -299,7 +299,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // the CONE is a lighting decoration over the visible set (faded context unless
   // isolate). Computed purely (core cone()), painted here.
   function select(ids: string[]) {
-    const { cy, model } = S.current
+    const { model } = S.current, cy = S.current.cy!
     if (!ids || !ids.length) return showAll()
     const { v, keep } = paintCone(ids, S.current.isolate, false)
     labelDist(cy, ids, v.entityIds)
@@ -316,8 +316,9 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // (the `preview` class) and with no camera move and no commit. mouseout repaints
   // the committed view (or clears).
   function previewCone(id: string) {
-    if (S.current.previewing === id || !S.current.cy) return
-    if (S.current.cy.$id(id).data('grp')) return
+    const cy = S.current.cy
+    if (S.current.previewing === id || !cy) return
+    if (cy.$id(id).data('grp')) return
     S.current.previewing = id
     paintCone([id], false, true)   // lighting only: dimmer, never hide/fit/commit
   }
@@ -326,11 +327,11 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     S.current.previewing = null
     // restore the committed lighting in place (no fit — hover must not move the camera)
     if (S.current.focus.length) paintCone(S.current.focus, S.current.isolate, false)
-    else S.current.cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide preview')
+    else S.current.cy!.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide preview')
   }
 
   function showAll() {
-    const { cy } = S.current
+    const cy = S.current.cy!
     cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide')
     cy.nodes().forEach((n: any) => n.data('lbl', n.data('name')))
     cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 300 })
@@ -342,7 +343,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // round player: the 'rounds' Tour from `# step` -> a pure View per round,
   // applied as a transition; the new arrivals get the .step-new ring.
   function setStepTo(n: number) {
-    const { cy, model, adj, roundTour } = S.current; if (!roundTour) return
+    const { model, adj, roundTour } = S.current, cy = S.current.cy!; if (!roundTour) return
     n = Math.max(0, Math.min(roundTour.steps.length - 1, n))
     const next = tourView(model, roundTour, n, adj)
     if (!next) return
@@ -356,7 +357,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   }
 
   function relayout() {
-    const { cy, layoutName, rankDir } = S.current
+    const { layoutName, rankDir } = S.current, cy = S.current.cy!
     const base = { animate: true, animationDuration: 420, fit: true, padding: 40 }
     const opts: any = layoutName === 'dagre'
       ? { name: 'dagre', rankDir, nodeSep: 18, rankSep: 50, ...base }
@@ -407,7 +408,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       // this adapter calls; it runs a headless cytoscape for layout.
       const cy: Cy = backend === 'css'
         ? new CssGraph({ container: cyEl.current! })
-        : cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) } as any)
+        : cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) } as any) as unknown as Cy   // plugin methods (expandCollapse) aren't on @types Core; runtime-registered
       // d2 grouping -> cytoscape compound parents. container ids + their ancestors.
       const groups = new Set<string>()
       for (const e of model.entities) { let c = e.container; while (c && c !== 'root') { groups.add(c); c = parentOf(c) } }

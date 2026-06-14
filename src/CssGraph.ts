@@ -17,6 +17,54 @@ type XY = { x: number; y: number }
 type Handler = (ev: any) => void
 type LayoutOpts = any
 
+// ── the cytoscape Core subset AtlasPanel actually calls ──────────────────────
+// THIS interface is the parity contract between render backends. Both the real
+// `cytoscape()` Core and CssGraph satisfy it. A new `cy.foo()` the interface lacks
+// errors at the call site; adding `foo` here errors any backend that hasn't
+// implemented it. (Was `type Cy = any` in AtlasPanel, which let a capability added
+// to the cytoscape path silently no-op on the CSS backend.)
+export interface CyEle {
+  id(): string
+  data(k?: string, v?: any): any
+  addClass(c: string): this
+  removeClass(c: string): this
+  toggleClass(c: string, on?: boolean): this
+  outdegree(inc?: boolean): number
+  renderedPosition(): XY
+  renderedMidpoint(): XY
+  forEach(fn: (e: CyEle) => void): void
+  nonempty(): boolean
+}
+export interface CyColl {
+  [i: number]: CyEle
+  readonly length: number
+  nonempty(): boolean
+  forEach(fn: (e: CyEle) => void): void
+  data(k?: string, v?: any): any
+  addClass(c: string): this
+  removeClass(c: string): this
+  toggleClass(c: string, on?: boolean): this
+  filter(f: ((e: CyEle) => boolean) | string): CyColl
+  not(sel: string): CyColl
+  union(c: CyColl): CyColl
+  difference(c: CyColl): CyColl
+}
+export interface ExpandCollapse { collapseAll(): void; expandAll(): void }
+export interface GraphBackend {
+  add(eles: any[]): void
+  $id(id: string): CyColl
+  nodes(sel?: string): CyColl
+  edges(sel?: string): CyColl
+  elements(sel?: string): CyColl
+  batch(fn: () => void): void
+  resize(): void
+  animate(anis: any, opts?: any): void
+  layout(opts: LayoutOpts): { run(): void; stop(): void; on(...a: any[]): void }
+  on(events: string, selOrFn: string | Handler, fn?: Handler): GraphBackend
+  expandCollapse(opts?: any): ExpandCollapse
+  destroy(): void
+}
+
 // node ids carry dots/colons; CSS anchor-name needs a bare dashed-ident.
 const cssName = (id: string) => '--n_' + id.replace(/[^a-zA-Z0-9_-]/g, '_')
 // one anchor-name per side-center port (4 per node); edges tether to two of these.
@@ -40,7 +88,7 @@ function matchSel(e: Ele, sel?: string): boolean {
 }
 
 // ── one node or edge ────────────────────────────────────────────────────────
-class Ele {
+class Ele implements CyEle {
   _data: Record<string, any>
   _pos: { x: number; y: number; w: number; h: number } | null = null
   lblEl?: HTMLSpanElement
@@ -71,7 +119,7 @@ class Ele {
 }
 
 // ── a set of elements; chainable like a cytoscape collection ─────────────────
-class Coll {
+class Coll implements CyColl {
   [i: number]: Ele
   constructor(public els: Ele[]) { els.forEach((e, i) => { this[i] = e }) }
   get length() { return this.els.length }
@@ -90,7 +138,7 @@ class Coll {
   toggleClass(c: string, on?: boolean) { this.els.forEach(e => e.toggleClass(c, on)); return this }
 }
 
-export class CssGraph {
+export class CssGraph implements GraphBackend {
   host: HTMLElement
   viewport: HTMLDivElement
   world: HTMLDivElement
