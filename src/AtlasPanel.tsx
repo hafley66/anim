@@ -13,6 +13,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import cytoscape from 'cytoscape'
 import dagre from 'cytoscape-dagre'
 import expandCollapse from 'cytoscape-expand-collapse'
+import { CssGraph } from './CssGraph'
+import './css-graph.css'
 import { buildModel, loadD2 } from './core/d2'
 import { modelFromRows } from './core/rows'
 import { lastSeg, parentOf } from './core/model'
@@ -163,6 +165,9 @@ function buildCyStyle(t: ReturnType<typeof readTheme>): any[] {
   { selector: 'edge.hl-out', style: { 'line-color': t.edgeOut, 'target-arrow-color': t.edgeOut, 'width': 2.4, 'opacity': 1 } },
   { selector: 'edge.hl-note', style: { 'line-color': '#6366f1', 'target-arrow-color': '#6366f1',
     'line-style': 'solid', 'width': 2.6, 'color': '#4338ca', 'font-size': 15, 'z-index': 50, 'opacity': 1 } },
+  // hover preview: the cone a click WOULD light, rendered slightly weaker than a commit
+  { selector: 'node.preview', style: { 'background-opacity': 0.78, 'border-opacity': 0.85 } },
+  { selector: 'edge.preview', style: { 'opacity': 0.7 } },
   ]
 }
 
@@ -202,6 +207,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   const [full, setFull] = useState(false)   // click-into: same instance, full-screen
   const [stepUI, setStepUI] = useState<{ n: number; cap: string } | null>(null) // round player, or null when no steps
   const [heat, setHeat] = useState(false)   // graphology betweenness coloring
+  const [backend, setBackend] = useState<'cyto' | 'css'>('cyto')   // render engine: canvas cytoscape | pure-DOM CssGraph
   const [barMode, setBarMode] = useState('rows')  // 'off' | 'rows' (per-row slice) | 'stacked' (branch = one stacked bar of children)
   const [ui, setUi] = useState({ mode: 'cone', isolate: false, layoutName: 'dagre', rankDir: 'TB' })
   const [spot, setSpot] = useState<Spot | null>(null)         // active span step, or null
@@ -264,15 +270,15 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
 
   // Paint the CONE lighting for `ids`: fade everything, light the cone, ring the
   // focals, class the in/out edges. Pure decoration (core cone()); does NOT touch
-  // focus/URL/FS/camera so both a committed select and a transient hover preview
-  // share one painter. `iso` hides the non-cone; `false` for hover (never hide on
-  // hover). Returns the cone view + the kept elements.
-  function paintCone(ids: string[], iso: boolean) {
+  // focus/URL/FS/camera so a committed select and a transient hover preview share
+  // one painter. `iso` hides the non-cone. `preview` marks the lit set with the
+  // `preview` class (rendered dimmer) and never isolates. Returns the cone + kept.
+  function paintCone(ids: string[], iso: boolean, preview: boolean) {
     const { cy, model, adj, mode } = S.current
     const v = cone(model, ids, mode as ConeMode, adj)
     const keepN = cy.nodes().filter((n: any) => v.entityIds.has(n.id()))
     const keepE = cy.edges().filter((e: any) => v.edgeIds.has(e.id()))
-    cy.elements().addClass('faded').removeClass('iso-hide hl-focal hl-cone hl-in hl-out')
+    cy.elements().addClass('faded').removeClass('iso-hide hl-focal hl-cone hl-in hl-out preview')
     keepN.not('[?grp]').removeClass('faded').addClass('hl-cone')
     for (const f of ids) cy.$id(f).removeClass('faded hl-cone').addClass('hl-focal')
     // edge direction classes: out = on a downstream path from a focal, in = upstream
@@ -285,14 +291,17 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       })
     }
     const keep = keepN.union(keepE)
-    if (iso) cy.elements().difference(keep).addClass('iso-hide')
+    if (preview) keep.addClass('preview')
+    else if (iso) cy.elements().difference(keep).addClass('iso-hide')
     return { v, keep }
   }
 
+  // the CONE is a lighting decoration over the visible set (faded context unless
+  // isolate). Computed purely (core cone()), painted here.
   function select(ids: string[]) {
     const { cy, model } = S.current
     if (!ids || !ids.length) return showAll()
-    const { v, keep } = paintCone(ids, S.current.isolate)
+    const { v, keep } = paintCone(ids, S.current.isolate, false)
     labelDist(cy, ids, v.entityIds)
     cy.animate({ fit: { eles: keep, padding: 60 } }, { duration: 300 })
     // FS lists the whole graph (or the iso cone) and lights the focused cone,
@@ -303,20 +312,21 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     syncURL()
   }
 
-  // Hover projection: show exactly what a click would light (the cone), with no
-  // camera move and no commit. mouseout repaints the committed view (or clears).
+  // Hover projection: show exactly what a click would light (the cone), dimmer
+  // (the `preview` class) and with no camera move and no commit. mouseout repaints
+  // the committed view (or clears).
   function previewCone(id: string) {
-    if (S.current.previewing === id) return
+    if (S.current.previewing === id || !S.current.cy) return
     if (S.current.cy.$id(id).data('grp')) return
     S.current.previewing = id
-    paintCone([id], false)   // lighting only: never hide, never fit, never commit
+    paintCone([id], false, true)   // lighting only: dimmer, never hide/fit/commit
   }
   function clearPreview() {
     if (!S.current.previewing) return
     S.current.previewing = null
     // restore the committed lighting in place (no fit — hover must not move the camera)
-    if (S.current.focus.length) paintCone(S.current.focus, S.current.isolate)
-    else S.current.cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide')
+    if (S.current.focus.length) paintCone(S.current.focus, S.current.isolate, false)
+    else S.current.cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide preview')
   }
 
   function showAll() {
@@ -392,7 +402,12 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       const { tcol, maxTier } = laneColumns(model.entities, tierMap)
       S.current.maxTier = maxTier
       const noteOf = new Map(model.entities.map(e => [e.id, e.note]))
-      const cy: Cy = cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) } as any)
+      // backend swap (toggled by the toolbar checkbox, NOT a URL): CssGraph is the
+      // pure-DOM + CSS-anchor renderer that duck-types the cytoscape Core subset
+      // this adapter calls; it runs a headless cytoscape for layout.
+      const cy: Cy = backend === 'css'
+        ? new CssGraph({ container: cyEl.current! })
+        : cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) } as any)
       // d2 grouping -> cytoscape compound parents. container ids + their ancestors.
       const groups = new Set<string>()
       for (const e of model.entities) { let c = e.container; while (c && c !== 'root') { groups.add(c); c = parentOf(c) } }
@@ -443,7 +458,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
         if (!ev.target.data('grp')) {                            // periscope: this node's files
           const rows = identRefs(model, id)
           atlasBus.emit(PERISCOPE, rows.length ? { ident: lastSeg(id), rows } : null)
-          previewCone(id)                                        // hover = projection of the click's cone
+          previewCone(id)                                        // hover = dimmer projection of the click's cone
         }
         const rp = ev.target.renderedPosition()
         const a = anchorRef.current, t = tipRef.current
@@ -510,7 +525,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       }
     })()
     return () => { alive = false; cyRef.current?.destroy(); cyRef.current = null }
-  }, [d2, rows])
+  }, [d2, rows, backend])
 
   // narration hover -> light the matching node + its rows (core/bus.ts in action),
   // and answer with the ident's files (the periscope feed).
@@ -647,6 +662,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
           {DIRECTIONAL.has(ui.layoutName) && <><button className="atlas-btn" onClick={fold} title="fold containers">⊟</button><button className="atlas-btn" onClick={unfold} title="unfold">⊞</button></>}
           <label className="atlas-chk"><input type="checkbox" checked={ui.isolate} onChange={e => setIsolate(e.target.checked)} />iso</label>
           <label className="atlas-chk"><input type="checkbox" checked={heat} onChange={toggleHeat} />heat</label>
+          <label className="atlas-chk" title="render with the pure-DOM + CSS-anchor backend"><input type="checkbox" checked={backend === 'css'} onChange={e => setBackend(e.target.checked ? 'css' : 'cyto')} />css</label>
           <select className="atlas-sel" value={barMode} onChange={e => setBarMode(e.target.value)} title="weight bar">
             <option value="off">bar: off</option>
             <option value="rows">bar: rows</option>
