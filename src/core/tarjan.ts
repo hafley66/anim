@@ -35,13 +35,19 @@ export function scc(nodes: IdNode[], edges: IdEdge[]): Scc {
   return { cyclic, comp, components }
 }
 
-// condense each SCC, longest-path layer the DAG so roots sit at tier 0 (Kahn).
+// condense each SCC, longest-path layer the DAG so nodes with NO dependencies
+// (no outgoing edges) sit at tier 0 and each tier above adds one dependency hop
+// (Kahn over the reversed condensed graph). With edge from->to meaning "from
+// depends on to", tier(n) = the longest dependency chain beneath n: a leaf
+// primitive is tier 0, a deep consumer is the highest tier.
 export function topoTiers(nodes: IdNode[], edges: IdEdge[], comp: Map<string, number>): Map<string, number> {
   const cids = [...new Set(comp.values())]
   const adj = new Map<number, Set<number>>(cids.map(c => [c, new Set()])), indeg = new Map<number, number>(cids.map(c => [c, 0]))
   for (const e of edges) {
+    // reverse the dependency edge: a depends on b => b is the lower tier, so
+    // tiers climb from no-deps (tier 0) up to the most-dependent consumers.
     const a = comp.get(e.source)!, b = comp.get(e.target)!
-    if (a !== b && !adj.get(a)!.has(b)) { adj.get(a)!.add(b); indeg.set(b, indeg.get(b)! + 1) }
+    if (a !== b && !adj.get(b)!.has(a)) { adj.get(b)!.add(a); indeg.set(a, indeg.get(a)! + 1) }
   }
   const tier = new Map<number, number>(cids.map(c => [c, 0])), left = new Map(indeg), q = cids.filter(c => indeg.get(c) === 0)
   while (q.length) {
