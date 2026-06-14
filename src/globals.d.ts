@@ -4,5 +4,7 @@
 declare module '*.css'
 declare module 'cytoscape-dagre'
 declare module 'cytoscape-elk'
+declare module 'dagre'
+declare module 'elkjs/lib/elk.bundled.js'
 declare module 'cytoscape-expand-collapse'
 declare module 'shiki-magic-move/react'

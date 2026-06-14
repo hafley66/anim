@@ -21,13 +21,14 @@ import { lastSeg, parentOf } from './core/model'
 import { scc, topoTiers } from './core/tarjan'
 import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, identRefs, predecessors, reachableRefs, successors } from './core/views'
 import { tourFromSequence, tourView } from './core/tour'
-import { tierCells, gridCell } from './core/layout'
+import { laneColumns, gridCell } from './core/layout'
 import { heat as computeHeat } from './core/metrics'
 import { decodeAtlasState, decodeFocus, encodeAtlasState, encodeFocus } from './core/codec'
 import { transitionViews } from './core/transition'
 import { Tree } from 'react-arborist'
 import { buildTree, toForest, nodeCount } from './core/tree'
 import { panelSpec, pathOfFor, panelKeysOf } from './core/panels'
+import { GROUP_DIMS, groupForest, type GroupKey } from './core/groups'
 import { atlasBus, HOVER, PERISCOPE } from './atlas-bus'
 import CodeSpotlight from './CodeSpotlight'
 import type { ConeMode, Detail, Model, Span, Tour, View } from './core/model'
@@ -195,6 +196,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   const tipRef = useRef<HTMLDivElement>(null)      // native popover; CSS anchors it above the node
   const S = useRef<PanelState>({ model: null as unknown as Model, adj: null as unknown as Adj, view: null, focus: [], mode: 'cone', isolate: false, layoutName: 'dagre', rankDir: 'TB', noteOf: new Map() })
   const [refsByPanel, setRefsByPanel] = useState<Record<string, TreeNode>>({})
+  const [groupBy, setGroupBy] = useState<GroupKey>('container')   // sidebar regroup of the GRAPH NODES
   const [detail, setDetail] = useState<Detail | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})   // whole-panel fold (fs/sql/api/detail)
   const [tour, setTour] = useState<{ name: string | null; step: number }>({ name: null, step: -1 })
@@ -213,6 +215,11 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // legacy tours prop ({name: [{focus}|{path}]}) -> Tour at the boundary
   const namedTours = useMemo(() => Object.entries(tours || {}).map(([n, seq]) => tourFromSequence(n, seq)), [tours])
   const allTours = useMemo(() => [...modelTours, ...namedTours], [modelTours, namedTours])
+  // regroup the graph nodes by container/source/tag/kind. refsByPanel changes
+  // identity on every model rebuild, so it doubles as the "model ready" dep.
+  const groupTree = useMemo(() => (S.current.model ? groupForest(S.current.model, groupBy) : []), [refsByPanel, groupBy])
+  const groupSpec: PanelSpec = { key: 'group', title: 'groups', pathOf: pathOfFor('*'), icon: '▸', leafIcon: '·' }
+  const forestRows = (fs: { children?: any[] | null }[]): number => fs.reduce((s, n) => s + 1 + (n.children ? forestRows(n.children) : 0), 0)
   // mirrored in S.current so the once-bound window.__atlas closure stays fresh
   const showSpot = (v: Spot | null) => { S.current.spot = v; setSpot(v) }
   const stepTourRef = useRef<((name: string, dir: number) => void) | null>(null)
@@ -392,7 +399,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       // d2-grid-style tiering: Kahn longest-path layer, then a stable column index
       // within each tier. Drives the grid layout's exact cell placement.
       const tierMap = topoTiers(model.entities, model.edges, comp)
-      const { tcol, maxTier } = tierCells(model.entities, tierMap)
+      const { tcol, maxTier } = laneColumns(model.entities, tierMap)
       S.current.maxTier = maxTier
       const noteOf = new Map(model.entities.map(e => [e.id, e.note]))
       // backend swap (toggled by the toolbar checkbox, NOT a URL): CssGraph is the
@@ -670,6 +677,25 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
           <button className="atlas-btn atlas-full-btn" onClick={() => setFull(f => !f)} title={full ? 'collapse (Esc)' : 'open editor'}>
             {full ? '⤡ close' : '⤢ expand'}
           </button>
+        </div>
+
+        <div className={`atlas-panel${collapsed.groups ? ' collapsed' : ''}`}>
+          <div className="atlas-phead">
+            <span className="caret" onClick={() => toggle('groups')}>▾</span>
+            <span onClick={() => toggle('groups')}>groups</span>
+            <select className="atlas-sel atlas-groupby" value={groupBy} title="group nodes by"
+                    onClick={e => e.stopPropagation()} onChange={e => setGroupBy(e.target.value as GroupKey)}>
+              {GROUP_DIMS.map(d => <option key={d.key} value={d.key}>{d.title}</option>)}
+            </select>
+            <span className="count">{groupTree.length || ''}</span>
+          </div>
+          {!collapsed.groups && (groupTree.length
+            ? <Tree className="atlas-tree" data={groupTree} openByDefault width="100%"
+                    height={Math.min(Math.max(forestRows(groupTree), 1), 12) * ROW_H + 6}
+                    rowHeight={ROW_H} indent={14} disableDrag disableDrop disableMultiSelection>
+                {renderRow(groupSpec)}
+              </Tree>
+            : <div className="muted atlas-empty">no nodes</div>)}
         </div>
 
         {Object.keys(refsByPanel).map(k => {

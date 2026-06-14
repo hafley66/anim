@@ -18,15 +18,30 @@ class AtlasGraph extends HTMLElement {
   _root: ReturnType<typeof createRoot> | null = null
   _mount() {
     if (this._root) return
-    const script = this.querySelector('script[type="application/atlas"]')
-    const d2 = (script ? script.textContent : this.textContent) || ''
+    // Two config shapes:
+    //   <script type="application/atlas+json">{"d2":"...","tours":{...},"docs":{...}}</script>
+    //   <script type="application/atlas">raw d2 text</script>   (back-compat; tours dropped)
+    // The +json form is what bin/atlas-file.mjs emits so a standalone file can carry tours.
+    const json = this.querySelector('script[type="application/atlas+json"]')
+    const raw = this.querySelector('script[type="application/atlas"]')
+    let d2 = '', tours: Record<string, any> = {}, docs: Record<string, string> = {}
+    if (json?.textContent) {
+      try {
+        const cfg = JSON.parse(json.textContent)
+        d2 = cfg.d2 || ''
+        tours = cfg.tours || {}
+        docs = cfg.docs || {}
+      } catch (e) { console.error('atlas+json parse failed:', e) }
+    } else {
+      d2 = (raw ? raw.textContent : this.textContent) || ''
+    }
     this.style.display = 'block'
     if (!this.style.height) this.style.height = '100%'
     const mount = document.createElement('div')
     mount.style.height = '100%'
     this.replaceChildren(mount)          // config captured; swap it for the mount
     this._root = createRoot(mount)
-    this._root.render(<AtlasPanel d2={d2} />)
+    this._root.render(<AtlasPanel d2={d2} tours={tours} docs={docs} />)
   }
   disconnectedCallback() { this._root?.unmount(); this._root = null }
 }
