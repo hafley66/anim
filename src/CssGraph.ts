@@ -360,10 +360,13 @@ export class CssGraph implements GraphBackend {
         const px = u * u * u * S.x + 3 * u * u * t * C1.x + 3 * u * t * t * C2.x + t * t * t * T.x
         const py = u * u * u * S.y + 3 * u * u * t * C1.y + 3 * u * t * t * C2.y + t * t * t * T.y
         const dirX = (px - S.x) * box.width / 100, dirY = (py - S.y) * box.height / 100   // screen-space
+        const len = Math.hypot(dirX, dirY) || 1
         const arot = Math.atan2(-dirY, -dirX) * 180 / Math.PI                              // point back into the node
         arrow.style.setProperty('--arot', arot.toFixed(1) + 'deg')
-        arrow.style.setProperty('--ax', `calc(${S.x}% + ${(NORMAL[src][0] * GAP).toFixed(2)}px)`)
-        arrow.style.setProperty('--ay', `calc(${S.y}% + ${(NORMAL[src][1] * GAP).toFixed(2)}px)`)
+        // back the tip off the border ALONG THE LINE (not the side normal): the wire runs
+        // along the tangent, so a normal-direction nudge would slide the tip off the line.
+        arrow.style.setProperty('--ax', `calc(${S.x}% + ${(dirX / len * GAP).toFixed(2)}px)`)
+        arrow.style.setProperty('--ay', `calc(${S.y}% + ${(dirY / len * GAP).toFixed(2)}px)`)
       }
     }
   }
