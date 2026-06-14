@@ -364,6 +364,7 @@ g.lit rect, g.lit ellipse, g.lit path { stroke: #d08770 !important; stroke-width
 @keyframes peri-draw { from { transform: scaleX(0); } }
 .atlas-step { font: 600 11px ui-monospace, Menlo, monospace; color: #4338ca; padding: 0 4px; white-space: nowrap; }
 .atlas-sel { font: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+.atlas-phead .atlas-groupby { font-size: 10px; padding: 0 2px; cursor: pointer; }
 .atlas-chk { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #475569; }
 .dtags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 4px; }
 .dtag { font-size: 10px; background: #ede9fe; color: #6d28d9; border-radius: 4px; padding: 1px 6px; }

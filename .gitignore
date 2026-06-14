@@ -7,6 +7,8 @@ src/glossary.json
 src/map-svg.json
 graphs/*.d2
 public/*.svg
+# atlas-file.mjs output: keep the .d2/.atlas.js source, regenerate the html
+atlases/*.html
 data/*.sqlite-shm
 data/*.sqlite-wal
 test-results/

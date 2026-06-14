@@ -19,13 +19,14 @@ import { lastSeg, parentOf } from './core/model'
 import { scc, topoTiers } from './core/tarjan'
 import { buildAdj, cone, detailFor, detailForEdge, fullView, hopDistances, identRefs, predecessors, reachableRefs, successors } from './core/views'
 import { tourFromSequence, tourView } from './core/tour'
-import { tierCells, gridCell } from './core/layout'
+import { laneColumns, gridCell } from './core/layout'
 import { heat as computeHeat } from './core/metrics'
 import { decodeAtlasState, decodeFocus, encodeAtlasState, encodeFocus } from './core/codec'
 import { transitionViews } from './core/transition'
 import { Tree } from 'react-arborist'
 import { buildTree, toForest, nodeCount } from './core/tree'
 import { panelSpec, pathOfFor, panelKeysOf } from './core/panels'
+import { GROUP_DIMS, groupForest, type GroupKey } from './core/groups'
 import { atlasBus, HOVER, PERISCOPE } from './atlas-bus'
 import CodeSpotlight from './CodeSpotlight'
 import type { ConeMode, Detail, Model, Span, Tour, View } from './core/model'
@@ -59,6 +60,7 @@ type PanelState = {
   maxTier?: number
   tourPos?: { name: string; step: number } | null
   spot?: Spot | null
+  previewing?: string | null   // node id whose cone is hover-projected (uncommitted)
 }
 
 let dagreReg = false, elkReg = false
@@ -189,6 +191,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   const tipRef = useRef<HTMLDivElement>(null)      // native popover; CSS anchors it above the node
   const S = useRef<PanelState>({ model: null as unknown as Model, adj: null as unknown as Adj, view: null, focus: [], mode: 'cone', isolate: false, layoutName: 'dagre', rankDir: 'TB', noteOf: new Map() })
   const [refsByPanel, setRefsByPanel] = useState<Record<string, TreeNode>>({})
+  const [groupBy, setGroupBy] = useState<GroupKey>('container')   // sidebar regroup of the GRAPH NODES
   const [detail, setDetail] = useState<Detail | null>(null)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})   // whole-panel fold (fs/sql/api/detail)
   const [tour, setTour] = useState<{ name: string | null; step: number }>({ name: null, step: -1 })
@@ -206,6 +209,11 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
   // legacy tours prop ({name: [{focus}|{path}]}) -> Tour at the boundary
   const namedTours = useMemo(() => Object.entries(tours || {}).map(([n, seq]) => tourFromSequence(n, seq)), [tours])
   const allTours = useMemo(() => [...modelTours, ...namedTours], [modelTours, namedTours])
+  // regroup the graph nodes by container/source/tag/kind. refsByPanel changes
+  // identity on every model rebuild, so it doubles as the "model ready" dep.
+  const groupTree = useMemo(() => (S.current.model ? groupForest(S.current.model, groupBy) : []), [refsByPanel, groupBy])
+  const groupSpec: PanelSpec = { key: 'group', title: 'groups', pathOf: pathOfFor('*'), icon: '▸', leafIcon: '·' }
+  const forestRows = (fs: { children?: any[] | null }[]): number => fs.reduce((s, n) => s + 1 + (n.children ? forestRows(n.children) : 0), 0)
   // mirrored in S.current so the once-bound window.__atlas closure stays fresh
   const showSpot = (v: Spot | null) => { S.current.spot = v; setSpot(v) }
   const stepTourRef = useRef<((name: string, dir: number) => void) | null>(null)
@@ -254,11 +262,13 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     S.current.view = next
   }
 
-  // the CONE is a lighting decoration over the visible set (faded context unless
-  // isolate). Computed purely (core cone()), painted here.
-  function select(ids: string[]) {
+  // Paint the CONE lighting for `ids`: fade everything, light the cone, ring the
+  // focals, class the in/out edges. Pure decoration (core cone()); does NOT touch
+  // focus/URL/FS/camera so both a committed select and a transient hover preview
+  // share one painter. `iso` hides the non-cone; `false` for hover (never hide on
+  // hover). Returns the cone view + the kept elements.
+  function paintCone(ids: string[], iso: boolean) {
     const { cy, model, adj, mode } = S.current
-    if (!ids || !ids.length) return showAll()
     const v = cone(model, ids, mode as ConeMode, adj)
     const keepN = cy.nodes().filter((n: any) => v.entityIds.has(n.id()))
     const keepE = cy.edges().filter((e: any) => v.edgeIds.has(e.id()))
@@ -275,7 +285,14 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       })
     }
     const keep = keepN.union(keepE)
-    if (S.current.isolate) cy.elements().difference(keep).addClass('iso-hide')
+    if (iso) cy.elements().difference(keep).addClass('iso-hide')
+    return { v, keep }
+  }
+
+  function select(ids: string[]) {
+    const { cy, model } = S.current
+    if (!ids || !ids.length) return showAll()
+    const { v, keep } = paintCone(ids, S.current.isolate)
     labelDist(cy, ids, v.entityIds)
     cy.animate({ fit: { eles: keep, padding: 60 } }, { duration: 300 })
     // FS lists the whole graph (or the iso cone) and lights the focused cone,
@@ -284,6 +301,22 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
     setDetail(detailFor(model, ids[ids.length - 1]))
     S.current.focus = ids
     syncURL()
+  }
+
+  // Hover projection: show exactly what a click would light (the cone), with no
+  // camera move and no commit. mouseout repaints the committed view (or clears).
+  function previewCone(id: string) {
+    if (S.current.previewing === id) return
+    if (S.current.cy.$id(id).data('grp')) return
+    S.current.previewing = id
+    paintCone([id], false)   // lighting only: never hide, never fit, never commit
+  }
+  function clearPreview() {
+    if (!S.current.previewing) return
+    S.current.previewing = null
+    // restore the committed lighting in place (no fit — hover must not move the camera)
+    if (S.current.focus.length) paintCone(S.current.focus, S.current.isolate)
+    else S.current.cy.elements().removeClass('faded hl-focal hl-cone hl-in hl-out iso-hide')
   }
 
   function showAll() {
@@ -356,7 +389,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
       // d2-grid-style tiering: Kahn longest-path layer, then a stable column index
       // within each tier. Drives the grid layout's exact cell placement.
       const tierMap = topoTiers(model.entities, model.edges, comp)
-      const { tcol, maxTier } = tierCells(model.entities, tierMap)
+      const { tcol, maxTier } = laneColumns(model.entities, tierMap)
       S.current.maxTier = maxTier
       const noteOf = new Map(model.entities.map(e => [e.id, e.note]))
       const cy: Cy = cytoscape({ container: cyEl.current, wheelSensitivity: 0.2, style: buildCyStyle(readTheme()) } as any)
@@ -410,6 +443,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
         if (!ev.target.data('grp')) {                            // periscope: this node's files
           const rows = identRefs(model, id)
           atlasBus.emit(PERISCOPE, rows.length ? { ident: lastSeg(id), rows } : null)
+          previewCone(id)                                        // hover = projection of the click's cone
         }
         const rp = ev.target.renderedPosition()
         const a = anchorRef.current, t = tipRef.current
@@ -418,7 +452,7 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
         t.innerHTML = noteOf.get(id) ? noteToHTML(noteOf.get(id)) : esc(id)
         if (!t.matches(':popover-open')) { try { t.showPopover() } catch {} }
       })
-      cy.on('mouseout', 'node', () => { setLitRow(null); atlasBus.emit(PERISCOPE, null); try { tipRef.current?.hidePopover() } catch {} })
+      cy.on('mouseout', 'node', () => { setLitRow(null); atlasBus.emit(PERISCOPE, null); clearPreview(); try { tipRef.current?.hidePopover() } catch {} })
       // edge hover -> show WHY the edge exists (its # @ a -> b note), anchored at the cursor.
       cy.on('mouseover', 'edge', (ev: any) => {
         const note = ev.target.data('enote') || ev.target.data('elabel')
@@ -627,6 +661,25 @@ export default function AtlasPanel({ d2, rows, tours = {}, docs = {}, highlighte
           <button className="atlas-btn atlas-full-btn" onClick={() => setFull(f => !f)} title={full ? 'collapse (Esc)' : 'open editor'}>
             {full ? '⤡ close' : '⤢ expand'}
           </button>
+        </div>
+
+        <div className={`atlas-panel${collapsed.groups ? ' collapsed' : ''}`}>
+          <div className="atlas-phead">
+            <span className="caret" onClick={() => toggle('groups')}>▾</span>
+            <span onClick={() => toggle('groups')}>groups</span>
+            <select className="atlas-sel atlas-groupby" value={groupBy} title="group nodes by"
+                    onClick={e => e.stopPropagation()} onChange={e => setGroupBy(e.target.value as GroupKey)}>
+              {GROUP_DIMS.map(d => <option key={d.key} value={d.key}>{d.title}</option>)}
+            </select>
+            <span className="count">{groupTree.length || ''}</span>
+          </div>
+          {!collapsed.groups && (groupTree.length
+            ? <Tree className="atlas-tree" data={groupTree} openByDefault width="100%"
+                    height={Math.min(Math.max(forestRows(groupTree), 1), 12) * ROW_H + 6}
+                    rowHeight={ROW_H} indent={14} disableDrag disableDrop disableMultiSelection>
+                {renderRow(groupSpec)}
+              </Tree>
+            : <div className="muted atlas-empty">no nodes</div>)}
         </div>
 
         {Object.keys(refsByPanel).map(k => {
