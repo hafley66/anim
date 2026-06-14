@@ -67,15 +67,16 @@ export interface GraphBackend {
 
 // node ids carry dots/colons; CSS anchor-name needs a bare dashed-ident.
 const cssName = (id: string) => '--n_' + id.replace(/[^a-zA-Z0-9_-]/g, '_')
+// one anchor-name per side-center port (4 per node); edges tether to two of these.
+type Side = 't' | 'b' | 'l' | 'r'
+const SIDES: Side[] = ['t', 'b', 'l', 'r']
+const portName = (id: string, s: Side) => cssName(id) + '__' + s
 const DRAG_DEAD = 4   // px the pointer must travel before a press becomes a pan/drag (kills touchiness)
 
-// point on a node's border, on the ray from its center toward `toward` (world coords)
-function borderPoint(pos: { x: number; y: number; w: number; h: number }, toward: { x: number; y: number }) {
-  const cx = pos.x + pos.w / 2, cy = pos.y + pos.h / 2, dx = toward.x - cx, dy = toward.y - cy
-  if (!dx && !dy) return { x: cx, y: cy }
-  const s = Math.min(dx ? (pos.w / 2) / Math.abs(dx) : Infinity, dy ? (pos.h / 2) / Math.abs(dy) : Infinity)
-  return { x: cx + dx * s, y: cy + dy * s }
-}
+// outward unit normal of each side (box-local, y-down); the bezier leaves a port along it.
+const NORMAL: Record<Side, [number, number]> = { t: [0, -1], b: [0, 1], l: [-1, 0], r: [1, 0] }
+// arrow points along the travel direction = INTO the node = opposite the target side's outward normal.
+const AROT: Record<Side, number> = { l: 0, r: 180, t: 90, b: 270 }   // base arrow svg points +x (right)
 
 function matchSel(e: Ele, sel?: string): boolean {
   if (!sel) return true
@@ -159,11 +160,9 @@ export class CssGraph implements GraphBackend {
     this.viewport = document.createElement('div'); this.viewport.className = 'cssg-viewport'
     this.world = document.createElement('div'); this.world.className = 'cssg-world'
     this.viewport.appendChild(this.world); this.host.appendChild(this.viewport)
-    // one shared arrowhead marker; context-stroke makes it follow each wire's color.
-    this.viewport.insertAdjacentHTML('beforeend',
-      '<svg width="0" height="0" class="cssg-defs" aria-hidden="true"><defs>' +
-      '<marker id="cssg-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse">' +
-      '<path class="cssg-arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs></svg>')
+    // arrowheads are per-edge <svg class="cssg-arrow"> anchored to the target port
+    // (not a shared marker): the wire svg uses preserveAspectRatio=none, which would
+    // distort any marker drawn inside it.
     this.bindInput()
     this.applyView(false)
   }
@@ -201,16 +200,27 @@ export class CssGraph implements GraphBackend {
     const lbl = document.createElement('span'); lbl.className = 'cssg-lbl'
     lbl.textContent = data.lbl ?? data.label ?? data.name ?? data.id
     el.appendChild(lbl)
+    // 4 side-center port anchors: edges tether to these, so the box is exact at the
+    // node's real rendered size (no offsetWidth read; survives hop-superscript widening).
+    for (const s of SIDES) {
+      const port = document.createElement('i'); port.className = 'cssg-port ' + s
+      port.style.setProperty('anchor-name', portName(data.id, s)); el.appendChild(port)
+    }
     const e = new Ele(this, 'nodes', el, data); e.lblEl = lbl
     if (data.grp) el.classList.add('grp')
     this.world.appendChild(el); this.byId.set(data.id, e); this.nodeIds.push(data.id)
   }
   private addEdge(data: Record<string, any>) {
     const el = document.createElement('div'); el.className = 'cssg-edge'; el.id = data.id
-    el.style.setProperty('--a', cssName(data.source)); el.style.setProperty('--b', cssName(data.target))
     if (data.hasNote) el.dataset.hasNote = '1'
-    // viewBox + path are set per-frame in runEdges (px units, 1:1 with the box).
-    el.innerHTML = '<svg><path class="cssg-hit"/><path class="cssg-wire" marker-end="url(#cssg-arrow)"/></svg>'
+    // --a/--b (the two chosen port anchors) + the normalized path `d` are set per-frame
+    // in runEdges; CSS positions the box as the bbox of the two ports (pure anchor()).
+    // wire svg = a 0..100 unit box stretched to the edge box (preserveAspectRatio=none,
+    // non-scaling stroke). arrow svg is separate so the stretch can't distort it.
+    el.innerHTML =
+      '<svg class="cssg-wire-svg" viewBox="0 0 100 100" preserveAspectRatio="none">' +
+      '<path class="cssg-hit"/><path class="cssg-wire"/></svg>' +
+      '<svg class="cssg-arrow" viewBox="0 0 10 10"><path d="M0,0 L10,5 L0,10 z"/></svg>'
     const e = new Ele(this, 'edges', el, data)
     this.world.appendChild(el); this.byId.set(data.id, e); this.edgeIds.push(data.id)
   }
@@ -289,41 +299,40 @@ export class CssGraph implements GraphBackend {
     this.scheduleFlips()
   }
 
-  // ── edge geometry: compute each edge's viewBox + path from the node positions ──
-  // The anchor-positioned container (padded by --p) gives the box; here we size the
-  // SVG to it (1:1 px) and draw border-to-border, so colinear / cross-group / self
-  // edges all render with an arrowhead at the target's edge.
+  // ── edge geometry: pick two discrete ports, let CSS anchor() size the box ──────
+  // For each edge we choose the source/target SIDE (the one facing the other node)
+  // and tether the box to those two port anchors in CSS (the bbox of the two ports).
+  // The wire is a normalized 0..100 bezier (stretched, non-scaling stroke) leaving each
+  // port along its outward normal; the arrow is a separate svg, rotated by the target
+  // side alone (discrete ports => no atan2). No px / offsetWidth reads here.
   private scheduleFlips() { if (!this.flipQueued) { this.flipQueued = true; requestAnimationFrame(() => this.runEdges()) } }
   private runEdges() {
     this.flipQueued = false
-    const P = 30   // must equal --p in css-graph.css
+    const K = 45   // control-point offset in the 0..100 box (curve bulge)
     for (const eid of this.edgeIds) {
       const e = this.byId.get(eid)!, a = this.byId.get(e._data.source), b = this.byId.get(e._data.target)
       if (!a?._pos || !b?._pos) continue
-      const svg = e.el.firstElementChild as SVGSVGElement
-      // read LIVE sizes: hop superscripts widen a node after layout, so _pos.w/h are stale
-      const aw = a.el.offsetWidth, ah = a.el.offsetHeight, bw = b.el.offsetWidth, bh = b.el.offsetHeight
-      const ab = { x: a._pos.x, y: a._pos.y, w: aw, h: ah }, bb = { x: b._pos.x, y: b._pos.y, w: bw, h: bh }
-      const ac = { x: a._pos.x + aw / 2, y: a._pos.y + ah / 2 }
-      const bc = { x: b._pos.x + bw / 2, y: b._pos.y + bh / 2 }
-      let d: string, W: number, H: number
-      if (a === b) {                                   // self-loop: a small arc off the top-right corner
-        W = aw / 2 + 2 * P; H = ah / 2 + 2 * P
-        const x0 = aw / 2, y0 = P, r = P
-        d = `M${x0},${y0 + r * 0.4} C${x0 + r},${y0 - r * 0.6} ${x0 + r * 2},${y0 + r * 0.8} ${x0 + r * 1.1},${y0 + r * 1.6}`
-      } else {
-        const minX = Math.min(ac.x, bc.x), minY = Math.min(ac.y, bc.y)
-        W = Math.abs(bc.x - ac.x) + 2 * P; H = Math.abs(bc.y - ac.y) + 2 * P
-        // endpoints on the node borders (toward the other node), in box-local coords
-        const sb = borderPoint(ab, bc), tb = borderPoint(bb, ac)
-        const sx = sb.x - minX + P, sy = sb.y - minY + P, tx = tb.x - minX + P, ty = tb.y - minY + P
-        const horiz = Math.abs(bc.x - ac.x) >= Math.abs(bc.y - ac.y)
-        const c1 = horiz ? `${(sx + tx) / 2},${sy}` : `${sx},${(sy + ty) / 2}`
-        const c2 = horiz ? `${(sx + tx) / 2},${ty}` : `${tx},${(sy + ty) / 2}`
-        d = `M${sx},${sy} C${c1} ${c2} ${tx},${ty}`
+      let src: Side, tgt: Side
+      if (a === b) { src = 'r'; tgt = 't' }            // self-loop: right port -> top port
+      else {
+        const ac = { x: a._pos.x + a._pos.w / 2, y: a._pos.y + a._pos.h / 2 }
+        const bc = { x: b._pos.x + b._pos.w / 2, y: b._pos.y + b._pos.h / 2 }
+        const dx = bc.x - ac.x, dy = bc.y - ac.y
+        if (Math.abs(dx) >= Math.abs(dy)) { src = dx >= 0 ? 'r' : 'l'; tgt = dx >= 0 ? 'l' : 'r' }
+        else { src = dy >= 0 ? 'b' : 't'; tgt = dy >= 0 ? 't' : 'b' }
+        // A at one box corner, B at the diagonal corner (collapses to an edge when colinear)
+        const ax = ac.x <= bc.x ? 0 : 100, ay = ac.y <= bc.y ? 0 : 100, bx = 100 - ax, by = 100 - ay
+        const c1 = `${ax + NORMAL[src][0] * K},${ay + NORMAL[src][1] * K}`
+        const c2 = `${bx + NORMAL[tgt][0] * K},${by + NORMAL[tgt][1] * K}`
+        const d = `M${ax},${ay} C${c1} ${c2} ${bx},${by}`
+        for (const p of e.el.querySelectorAll('.cssg-wire-svg path')) p.setAttribute('d', d)
       }
-      svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
-      for (const p of e.el.querySelectorAll('path')) p.setAttribute('d', d)
+      if (a === b) {                                   // a small loop in the corner box
+        for (const p of e.el.querySelectorAll('.cssg-wire-svg path')) p.setAttribute('d', 'M0,100 C60,100 100,60 100,0')
+      }
+      e.el.style.setProperty('--a', portName(a.id(), src))
+      e.el.style.setProperty('--b', portName(b.id(), tgt))
+      e.el.style.setProperty('--arot', AROT[tgt] + 'deg')
     }
   }
 
