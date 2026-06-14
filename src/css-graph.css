@@ -80,28 +80,47 @@
 .cssg-group:hover { border-color: var(--atlas-ctx-text, #64748b); }
 .cssg-group-lbl { position: absolute; top: 2px; left: 8px; font-size: 10px; color: var(--atlas-ctx-text, #64748b); cursor: grab; }
 
+/* ── PORTS ──────────────────────────────────────────────────────────────────
+   4 zero-size anchors per node, one at each side-center border. Edges tether to
+   two of them, so the edge box is the EXACT bbox of the chosen ports at the node's
+   real rendered size (no JS size reads). Invisible, never hit-tested. */
+.cssg-port { position: absolute; width: 0; height: 0; pointer-events: none; }
+.cssg-port.t { top: 0;    left: 50%; }
+.cssg-port.b { bottom: 0; left: 50%; }
+.cssg-port.l { left: 0;   top: 50%; }
+.cssg-port.r { right: 0;  top: 50%; }
+
 /* ── EDGES ────────────────────────────────────────────────────────────────────
-   The container is anchor-positioned to the two node centers (the prototype trick),
-   but PADDED by --p so a colinear pair (same row/col) still has a box to draw in
-   instead of collapsing to a zero-extent line. The path itself is computed per-edge
-   in JS (CssGraph.runEdges): endpoints sit on the node BORDERS (not centers, so the
-   line doesn't run under the node), with a bezier + arrowhead; self-loops get a loop. */
+   The box is the bbox of the two chosen port anchors (pure CSS anchor(), the
+   prototype's min(anchor center) trick). The wire svg is a 0..100 unit box stretched
+   to it (preserveAspectRatio=none + non-scaling stroke), so a colinear pair collapses
+   one axis to a straight line instead of vanishing. The path leaves each port along
+   its side normal (set in JS runEdges). The arrow is a SEPARATE svg anchored to the
+   target port and rotated by the target side, so the stretch can't distort it. */
 .cssg-edge {
-  --p: 30px;
+  --wire: var(--atlas-edge, #cbd5e1);
   position: absolute; z-index: 1; pointer-events: none;
-  top:    calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
-  left:   calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
-  right:  calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
-  bottom: calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
+  top:    min(anchor(var(--a) center), anchor(var(--b) center));
+  left:   min(anchor(var(--a) center), anchor(var(--b) center));
+  right:  min(anchor(var(--a) center), anchor(var(--b) center));
+  bottom: min(anchor(var(--a) center), anchor(var(--b) center));
 }
-.cssg-edge svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.cssg-edge .cssg-wire { fill: none; stroke: var(--atlas-edge, #cbd5e1); stroke-width: 1.6;
+.cssg-edge .cssg-wire-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.cssg-edge .cssg-wire { fill: none; stroke: var(--wire); stroke-width: 1.6;
   stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .cssg-edge .cssg-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
-.cssg-arrowhead { fill: context-stroke; }   /* arrow matches whatever the wire's stroke is */
+/* arrow: tip sits at the target port (border midpoint), rotated into the node */
+.cssg-edge .cssg-arrow {
+  position: absolute; width: 9px; height: 9px; overflow: visible;
+  top: anchor(var(--b) center); left: anchor(var(--b) center);
+  transform: translate(-50%, -50%) rotate(var(--arot, 0deg));
+}
+.cssg-edge .cssg-arrow path { fill: var(--wire); }
 .cssg-edge.faded { opacity: .2; }
-.cssg-edge.hl-in  .cssg-wire { stroke: var(--atlas-edge-in, #16a34a); stroke-width: 2.6; }
-.cssg-edge.hl-out .cssg-wire { stroke: var(--atlas-edge-out, #ea7c1f); stroke-width: 2.6; }
+.cssg-edge.hl-in  { --wire: var(--atlas-edge-in, #16a34a); }
+.cssg-edge.hl-out { --wire: var(--atlas-edge-out, #ea7c1f); }
+.cssg-edge.hl-in  .cssg-wire, .cssg-edge.hl-out .cssg-wire { stroke-width: 2.6; }
 .cssg-edge[data-has-note="1"] .cssg-wire { stroke-dasharray: 5 4; }
-.cssg-edge.hl-note .cssg-wire { stroke: #6366f1; stroke-width: 2.8; stroke-dasharray: none; }
+.cssg-edge.hl-note { --wire: #6366f1; }
+.cssg-edge.hl-note .cssg-wire { stroke-width: 2.8; stroke-dasharray: none; }
 .cssg-edge.hl-note, .cssg-edge.hl-in, .cssg-edge.hl-out { opacity: 1; }
