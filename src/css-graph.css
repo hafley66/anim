@@ -1,0 +1,107 @@
+/* css-graph.css — the DOM styling for CssGraph (the pure-CSS cytoscape backend).
+ * Mirrors buildCyStyle() in AtlasPanel, but as real CSS: the canvas can't use
+ * var(), DOM can — so every color reads the SAME :root --atlas-* token directly.
+ * Class names are byte-for-byte the cytoscape ones (faded/hl-cone/hl-focal/...),
+ * so AtlasPanel's addClass/removeClass calls land unchanged. */
+
+.cssg-viewport {
+  position: absolute; inset: 0; overflow: hidden; cursor: grab;
+  background: var(--atlas-surface, #fff);
+  touch-action: none;
+}
+.cssg-viewport.panning { cursor: grabbing; }
+.cssg-world { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+.cssg-world.animating .cssg-node { transition: transform .42s cubic-bezier(.4,0,.2,1); }
+
+/* ── NODES ─────────────────────────────────────────────────────────────── */
+.cssg-node {
+  position: absolute; top: 0; left: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  padding: 5px 12px; min-height: 24px;
+  font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--atlas-node-text, #1e293b);
+  background: var(--atlas-node-fill, #a5b4fc);
+  border: 1.6px solid var(--atlas-node-border, #4f46e5);
+  border-radius: 7px; white-space: nowrap; cursor: pointer; user-select: none;
+  /* NOTE: content-visibility:auto was here for paint virtualization, but it makes an
+     off-screen node report contain-intrinsic-size for offsetWidth, which breaks the
+     edge border-point math. Deferred until geometry reads from a stable size source. */
+}
+.cssg-node.grp { display: none; }            /* d2 containers: compound boxes are a later pass */
+.cssg-node[data-ann="1"] { border-width: 2px; }
+
+.cssg-node.leaf { background: #f1f5f9; border-color: #94a3b8; }
+.cssg-node.hub  { background: var(--atlas-hub-fill, #fde68a); border-color: var(--atlas-hub-border, #f59e0b); color: #1e293b; }
+.cssg-node.sink { background: #e2e8f0; border-radius: 11px; }
+.cssg-node.dead { border-style: dashed; border-color: #dc2626; background: #fee2e2; }
+.cssg-node.ghost { opacity: .45; border-style: dotted; }
+.cssg-node.text {
+  background: #fffbeb; border: 1px solid #fcd34d; color: #334155; font-weight: 400;
+  font-family: ui-sans-serif, system-ui, sans-serif; white-space: pre-wrap;
+  max-width: 240px; text-align: left; border-radius: 8px;
+}
+.cssg-node.diff-add { border-color: #16a34a; background: #dcfce7; }
+.cssg-node.diff-del { border-color: #dc2626; background: #fee2e2; border-style: dashed; }
+.cssg-node.diff-mod { border-color: #d97706; background: #fef3c7; }
+.cssg-node.cyc { border-color: #dc2626; border-width: 2.5px; border-style: double; }
+
+/* lighting (recomputed every select/hover/step) */
+.cssg-node.faded {
+  opacity: var(--atlas-ctx-opacity, .7);
+  background: var(--atlas-ctx-fill, #eef1f6); border-color: var(--atlas-ctx-border, #cbd5e1);
+  color: var(--atlas-ctx-text, #64748b);
+}
+.cssg-node.hl-cone {
+  background: var(--atlas-cone-fill, #4f46e5); color: var(--atlas-cone-text, #fff);
+  border-color: var(--atlas-cone-border, #312e81); border-width: 2px; opacity: 1;
+}
+.cssg-node.hl-focal {
+  background: var(--atlas-focal-fill, #1e1b4b); color: var(--atlas-focal-text, #fff);
+  border: 4px solid var(--atlas-focal-halo, #c7d2fe); opacity: 1; z-index: 99;
+}
+.cssg-node.hot { background: var(--atlas-hot, #fde047); border-color: var(--atlas-hot-border, #ca8a04); color: #1e293b; }
+.cssg-node.step-new { border: 4px solid #16a34a; background: #dcfce7; color: #14532d; z-index: 80; }
+.cssg-node.heaton { background: color-mix(in srgb, #dbeafe, #b91c1c calc(var(--heat, 0) * 100%)); color: #1e293b; }
+
+/* hover preview: the cone a click WOULD light, slightly weaker than a commit.
+   `preview` rides on top of hl-cone/hl-focal, pulling the intensity down. */
+.cssg-node.hl-cone.preview { background: color-mix(in srgb, var(--atlas-cone-fill, #4f46e5), transparent 24%); border-color: color-mix(in srgb, var(--atlas-cone-border, #312e81), transparent 20%); }
+.cssg-node.hl-focal.preview { opacity: .9; border-width: 3px; border-color: color-mix(in srgb, var(--atlas-focal-halo, #c7d2fe), transparent 25%); }
+.cssg-edge.preview { opacity: .7; }
+
+.cssg-node.step-hide, .cssg-node.iso-hide,
+.cssg-edge.step-hide, .cssg-edge.iso-hide { display: none; }
+
+/* container boxes (drawn from the children's bounding box; the grp node stays hidden).
+   Draggable: pressing the box (not a member node) moves the whole container. */
+.cssg-group { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: auto; cursor: grab;
+  border: 1px dashed var(--atlas-ctx-border, #cbd5e1); border-radius: 10px;
+  background: color-mix(in srgb, var(--atlas-ctx-text, #64748b), transparent 94%); }
+.cssg-group:hover { border-color: var(--atlas-ctx-text, #64748b); }
+.cssg-group-lbl { position: absolute; top: 2px; left: 8px; font-size: 10px; color: var(--atlas-ctx-text, #64748b); cursor: grab; }
+
+/* ── EDGES ────────────────────────────────────────────────────────────────────
+   The container is anchor-positioned to the two node centers (the prototype trick),
+   but PADDED by --p so a colinear pair (same row/col) still has a box to draw in
+   instead of collapsing to a zero-extent line. The path itself is computed per-edge
+   in JS (CssGraph.runEdges): endpoints sit on the node BORDERS (not centers, so the
+   line doesn't run under the node), with a bezier + arrowhead; self-loops get a loop. */
+.cssg-edge {
+  --p: 30px;
+  position: absolute; z-index: 1; pointer-events: none;
+  top:    calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
+  left:   calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
+  right:  calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
+  bottom: calc(min(anchor(var(--a) center), anchor(var(--b) center)) - var(--p));
+}
+.cssg-edge svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.cssg-edge .cssg-wire { fill: none; stroke: var(--atlas-edge, #cbd5e1); stroke-width: 1.6;
+  stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.cssg-edge .cssg-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+.cssg-arrowhead { fill: context-stroke; }   /* arrow matches whatever the wire's stroke is */
+.cssg-edge.faded { opacity: .2; }
+.cssg-edge.hl-in  .cssg-wire { stroke: var(--atlas-edge-in, #16a34a); stroke-width: 2.6; }
+.cssg-edge.hl-out .cssg-wire { stroke: var(--atlas-edge-out, #ea7c1f); stroke-width: 2.6; }
+.cssg-edge[data-has-note="1"] .cssg-wire { stroke-dasharray: 5 4; }
+.cssg-edge.hl-note .cssg-wire { stroke: #6366f1; stroke-width: 2.8; stroke-dasharray: none; }
+.cssg-edge.hl-note, .cssg-edge.hl-in, .cssg-edge.hl-out { opacity: 1; }

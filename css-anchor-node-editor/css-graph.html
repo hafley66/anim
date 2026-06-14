@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSS Graph — cytoscape in pure CSS</title>
+<style>
+  :root {
+    --bg: #0f1420; --surface: #0f1420; --grid: #161d2b;
+    --node-fill: #a5b4fc; --node-text: #1e293b; --node-border: #4f46e5;
+    --cone-fill: #4f46e5; --cone-text: #fff; --cone-border: #312e81;
+    --focal-fill: #1e1b4b; --focal-text: #fff; --focal-halo: #c7d2fe;
+    --ctx-fill: #1c2434; --ctx-text: #6f86a6; --ctx-border: #2a3850; --ctx-opacity: .75;
+    --edge: #46566f; --edge-out: #ea7c1f; --edge-in: #16a34a;
+    --hub-fill: #fde68a; --hub-border: #f59e0b; --ink: #cfe3ff; --muted: #6f86a6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* viewport = fixed window; world = panned/zoomed layer (the anchor containing block) */
+  .viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab;
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 36px 36px; touch-action: none; }
+  .viewport.panning { cursor: grabbing; }
+  .world { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+  .world.animating .node { transition: transform .42s cubic-bezier(.4,0,.2,1); }
+
+  /* ── NODES ─────────────────────────────────────────────────────────────── */
+  .node {
+    position: absolute; top: 0; left: 0; display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; min-height: 24px; border-radius: 8px; cursor: pointer; user-select: none;
+    font-weight: 600; white-space: nowrap;
+    color: var(--node-text); background: var(--node-fill); border: 1.6px solid var(--node-border);
+    box-shadow: 0 6px 18px #0007;
+    /* paint virtualization: skip render work for off-screen nodes, but keep a sized
+       placeholder so the CSS-anchor edges still resolve their endpoints. */
+    content-visibility: auto; contain-intrinsic-size: auto 90px auto 26px;
+    transition: background .15s, border-color .15s, opacity .15s; }
+  .node .sup { font-size: 10px; opacity: .8; }
+  .node.hub  { background: var(--hub-fill); border-color: var(--hub-border); }
+  .node.leaf { background: #e2e8f0; border-color: #94a3b8; }
+
+  .node.faded { opacity: var(--ctx-opacity); background: var(--ctx-fill); border-color: var(--ctx-border); color: var(--ctx-text); box-shadow: none; }
+  .node.cone  { background: var(--cone-fill); color: var(--cone-text); border-color: var(--cone-border); border-width: 2px; opacity: 1; }
+  .node.focal { background: var(--focal-fill); color: var(--focal-text); border: 4px solid var(--focal-halo); opacity: 1; z-index: 9; }
+
+  /* ── EDGES: the anchor-positioned tether ──────────────────────────────────── */
+  .edge { position: absolute; z-index: 1; pointer-events: none;
+    top:    min(anchor(var(--a) center), anchor(var(--b) center));
+    left:   min(anchor(var(--a) center), anchor(var(--b) center));
+    right:  min(anchor(var(--a) center), anchor(var(--b) center));
+    bottom: min(anchor(var(--a) center), anchor(var(--b) center)); }
+  .edge svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .edge.flip svg { transform: scaleY(-1); transform-origin: center; }
+  .edge .wire { fill: none; stroke: var(--edge); stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .edge.faded { opacity: .25; }
+  .edge.out .wire { stroke: var(--edge-out); stroke-width: 2.6; }
+  .edge.in  .wire { stroke: var(--edge-in);  stroke-width: 2.6; }
+
+  /* ── HUD ──────────────────────────────────────────────────────────────────── */
+  .bar { position: fixed; top: 14px; left: 14px; right: 14px; display: flex; gap: 8px; align-items: center; z-index: 20; pointer-events: none; }
+  .bar .title { font-weight: 700; color: #fff; margin-right: 4px; } .bar .title b { color: #2de2e6; }
+  .bar .spacer { flex: 1; }
+  .bar button { pointer-events: auto; all: unset; cursor: pointer; padding: 7px 12px; border-radius: 8px;
+    background: #182338; border: 1px solid #2a3d59; color: var(--ink); }
+  .bar button:hover { border-color: #2de2e6; }
+  .bar .pill { padding: 7px 10px; border-radius: 8px; background: #0d1828aa; border: 1px solid #213650; color: var(--muted); }
+  .hint { position: fixed; bottom: 14px; left: 14px; z-index: 20; color: var(--muted); font-size: 12px; }
+  .hint b { color: var(--ink); }
+  .unsupported { display: none; position: fixed; inset: 0; place-items: center; text-align: center; background: var(--bg); padding: 40px; z-index: 99; }
+  @supports not (top: anchor(--x center)) { .unsupported { display: grid; } .viewport { filter: blur(3px); } }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="title">CSS <b>Graph</b> — cytoscape render layer, zero canvas</span>
+  <button id="dir">dir: ↓ TB</button>
+  <button id="reset">reset</button>
+  <span class="spacer"></span>
+  <span class="pill" id="zoom">100%</span>
+</div>
+
+<div class="viewport" id="viewport"><div class="world" id="world"></div></div>
+
+<div class="hint">click a node for its <b>downstream cone</b> · drag empty space to <b>pan</b> · <b>scroll</b> to zoom · click empty space to clear</div>
+<div class="unsupported"><div><h2>No CSS anchor positioning here.</h2>
+  <p>Use Chrome 125+, Safari 26+, or Firefox 147+. The edges are pure CSS — there is no fallback.</p></div></div>
+
+<script>
+// ── the model (same shape anim feeds its atlas: ids, edges, tags) ─────────────
+const NODES = [
+  { id: 'vxlan',   label: 'overlay.vxlan',  tags: ['hub'] },
+  { id: 'vtep',    label: 'net.vtep' },
+  { id: 'ip',      label: 'net.ip' },
+  { id: 'route',   label: 'net.route',      tags: ['hub'] },
+  { id: 'nexthop', label: 'net.nexthop' },
+  { id: 'ethernet',label: 'l2.ethernet' },
+  { id: 'mac',     label: 'l2.mac' },
+  { id: 'arp',     label: 'l2.arp' },
+  { id: 'fdb',     label: 'l2.fdb' },
+];
+const EDGES = [
+  ['vxlan','vtep'], ['vxlan','nexthop'], ['vtep','route'], ['ip','route'],
+  ['route','nexthop'], ['nexthop','ethernet'], ['ethernet','mac'],
+  ['ethernet','arp'], ['mac','fdb'], ['arp','fdb'],
+];
+
+// ── pure graph helpers (the "engine" — what CSS never does) ───────────────────
+const succ = new Map(NODES.map(n => [n.id, []]));
+const pred = new Map(NODES.map(n => [n.id, []]));
+for (const [s, t] of EDGES) { succ.get(s).push(t); pred.get(t).push(s); }
+const outdeg = id => succ.get(id).length, indeg = id => pred.get(id).length;
+
+// longest-path layering (Bellman-Ford relax; small graph, DAG)
+function layers() {
+  const tier = new Map(NODES.map(n => [n.id, 0]));
+  for (let k = 0; k < NODES.length; k++) for (const [s, t] of EDGES)
+    if (tier.get(t) < tier.get(s) + 1) tier.set(t, tier.get(s) + 1);
+  const col = new Map(), fill = new Map();
+  for (const n of NODES) { const t = tier.get(n.id), c = fill.get(t) || 0; col.set(n.id, c); fill.set(t, c + 1); }
+  let maxTier = 0; for (const t of tier.values()) maxTier = Math.max(maxTier, t);
+  return { tier, col, maxTier };
+}
+// downstream cone + hop distance from a focal (BFS over successors)
+function cone(focal) {
+  const dist = new Map([[focal, 0]]); const q = [focal];
+  while (q.length) { const u = q.shift(); for (const v of succ.get(u)) if (!dist.has(v)) { dist.set(v, dist.get(u) + 1); q.push(v); } }
+  return dist;
+}
+
+// ── render (pure CSS): one div per node, one anchor-tethered svg per edge ──────
+const world = document.getElementById('world'), viewport = document.getElementById('viewport');
+const PATH = 'M0,0 C40,0 60,100 100,100';
+const cssName = id => '--n_' + id;
+const nodeEl = new Map(), edgeEl = [];
+
+for (const n of NODES) {
+  const el = document.createElement('div');
+  el.className = 'node' + (n.tags?.includes('hub') ? ' hub' : '') + (outdeg(n.id) === 0 ? ' leaf' : '');
+  el.id = 'node-' + n.id; el.style.setProperty('anchor-name', cssName(n.id));
+  el.innerHTML = `<span class="lbl">${n.label}</span><span class="sup"></span>`;
+  el.addEventListener('click', e => { e.stopPropagation(); select(n.id); });
+  world.appendChild(el); nodeEl.set(n.id, el);                    // nodes first → anchors precede edges
+}
+for (const [s, t] of EDGES) {
+  const el = document.createElement('div'); el.className = 'edge';
+  el.style.setProperty('--a', cssName(s)); el.style.setProperty('--b', cssName(t));
+  el.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><path class="wire" d="${PATH}"/></svg>`;
+  world.appendChild(el); edgeEl.push({ s, t, el });
+}
+
+// ── layout: engine x/y → transform; the anchor edges re-tether for free ───────
+let dir = 'TB';
+function relayout(animate) {
+  const { tier, col, maxTier } = layers(); const COLW = 168, ROWH = 86;
+  if (animate) { world.classList.add('animating'); setTimeout(() => world.classList.remove('animating'), 460); }
+  for (const n of NODES) {
+    const t = tier.get(n.id), c = col.get(n.id);
+    const x = (dir === 'TB' ? c : t) * COLW, y = (dir === 'TB' ? t : c) * ROWH;
+    nodeEl.get(n.id).style.transform = `translate(${x}px, ${y}px)`;
+  }
+  requestAnimationFrame(() => { runFlips(); fit(animate); });
+}
+
+// flip the bezier onto the correct diagonal (the only edge math)
+function runFlips() {
+  for (const e of edgeEl) {
+    const a = nodeEl.get(e.s).getBoundingClientRect(), b = nodeEl.get(e.t).getBoundingClientRect();
+    if (!a.width || !b.width) continue;
+    e.el.classList.toggle('flip', (a.left < b.left) !== (a.top < b.top));
+  }
+}
+
+// ── selection → cone lighting (pure class application) ────────────────────────
+let focal = null;
+function select(id) {
+  focal = id; const dist = cone(id);
+  for (const n of NODES) {
+    const el = nodeEl.get(n.id), inCone = dist.has(n.id);
+    el.classList.toggle('faded', !inCone);
+    el.classList.toggle('cone', inCone && n.id !== id);
+    el.classList.toggle('focal', n.id === id);
+    el.querySelector('.sup').textContent = inCone && dist.get(n.id) > 0 ? '+' + dist.get(n.id) : '';
+  }
+  for (const e of edgeEl) {
+    const on = dist.has(e.s) && dist.has(e.t);
+    e.el.classList.toggle('out', on); e.el.classList.toggle('faded', !on);
+  }
+}
+function clearSel() {
+  focal = null;
+  for (const n of NODES) { const el = nodeEl.get(n.id); el.classList.remove('faded', 'cone', 'focal'); el.querySelector('.sup').textContent = ''; }
+  for (const e of edgeEl) e.el.classList.remove('out', 'faded');
+}
+
+// ── pan / zoom / fit (transform the world; anchors resolve in world space) ─────
+const view = { x: 80, y: 60, z: 1 };
+function applyView() { world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+  document.getElementById('zoom').textContent = Math.round(view.z * 100) + '%'; }
+function fit(animate) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of NODES) { const el = nodeEl.get(n.id); const m = el.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/); if (!m) continue;
+    const x = +m[1], y = +m[2], w = el.offsetWidth, h = el.offsetHeight;
+    minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h); }
+  const pad = 60, bw = maxX - minX, bh = maxY - minY, vw = innerWidth, vh = innerHeight;
+  view.z = Math.max(0.3, Math.min(1.6, Math.min((vw - 2 * pad) / bw, (vh - 2 * pad) / bh)));
+  view.x = (vw - bw * view.z) / 2 - minX * view.z; view.y = (vh - bh * view.z) / 2 - minY * view.z;
+  if (animate) { world.style.transition = 'transform .42s cubic-bezier(.4,0,.2,1)'; setTimeout(() => world.style.transition = '', 460); }
+  applyView();
+}
+
+let panning = null;
+viewport.addEventListener('pointerdown', ev => {
+  if (ev.target.closest('.node')) return;
+  panning = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: false };
+  viewport.classList.add('panning'); viewport.setPointerCapture(ev.pointerId);
+});
+viewport.addEventListener('pointermove', ev => {
+  if (!panning) return;
+  view.x = panning.vx + (ev.clientX - panning.x); view.y = panning.vy + (ev.clientY - panning.y);
+  if (Math.hypot(ev.clientX - panning.x, ev.clientY - panning.y) > 3) panning.moved = true;
+  applyView();
+});
+viewport.addEventListener('pointerup', () => { if (panning && !panning.moved) clearSel(); panning = null; viewport.classList.remove('panning'); });
+viewport.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const sx = ev.clientX, sy = ev.clientY, wx = (sx - view.x) / view.z, wy = (sy - view.y) / view.z;
+  view.z = Math.max(0.3, Math.min(2.5, view.z * (ev.deltaY < 0 ? 1.1 : 1 / 1.1)));
+  view.x = sx - wx * view.z; view.y = sy - wy * view.z; applyView(); requestAnimationFrame(runFlips);
+}, { passive: false });
+
+document.getElementById('dir').addEventListener('click', e => {
+  dir = dir === 'TB' ? 'LR' : 'TB'; e.target.textContent = 'dir: ' + (dir === 'TB' ? '↓ TB' : '→ LR'); relayout(true);
+});
+document.getElementById('reset').addEventListener('click', () => { clearSel(); relayout(true); });
+
+applyView();
+relayout(false);
+</script>
+</body>
+</html>
